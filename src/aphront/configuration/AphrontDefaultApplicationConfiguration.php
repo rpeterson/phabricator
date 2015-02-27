@@ -4,47 +4,14 @@
  * NOTE: Do not extend this!
  *
  * @concrete-extensible
- * @group aphront
  */
 class AphrontDefaultApplicationConfiguration
   extends AphrontApplicationConfiguration {
 
-  public function __construct() {
-
-  }
+  public function __construct() {}
 
   public function getApplicationName() {
     return 'aphront-default';
-  }
-
-  public function getURIMap() {
-    return $this->getResourceURIMapRules() + array(
-      '/~/' => array(
-        '' => 'DarkConsoleController',
-        'data/(?P<key>[^/]+)/' => 'DarkConsoleDataController',
-      ),
-
-      '/status/' => 'PhabricatorStatusController',
-
-
-      '/help/' => array(
-        'keyboardshortcut/' => 'PhabricatorHelpKeyboardShortcutController',
-      ),
-
-      '/debug/' => 'PhabricatorDebugController',
-    );
-  }
-
-  protected function getResourceURIMapRules() {
-    return array(
-      '/res/' => array(
-        '(?:(?P<mtime>[0-9]+)T/)?'.
-        '(?P<library>[^/]+)/'.
-        '(?P<hash>[a-f0-9]{8})/'.
-        '(?P<path>.+\.(?:css|js|jpg|png|swf|gif|woff))'
-          => 'CelerityPhabricatorResourceController',
-      ),
-    );
   }
 
   /**
@@ -98,7 +65,7 @@ class AphrontDefaultApplicationConfiguration
     }
 
     // For non-workflow requests, return a Ajax response.
-    if ($request->isAjax() && !$request->isJavelinWorkflow()) {
+    if ($request->isAjax() && !$request->isWorkflow()) {
       // Log these; they don't get shown on the client and can be difficult
       // to debug.
       phlog($ex);
@@ -112,16 +79,72 @@ class AphrontDefaultApplicationConfiguration
       return $response;
     }
 
-    $is_serious = PhabricatorEnv::getEnvConfig('phabricator.serious-business');
-
     $user = $request->getUser();
     if (!$user) {
       // If we hit an exception very early, we won't have a user.
       $user = new PhabricatorUser();
     }
 
-    if ($ex instanceof PhabricatorPolicyException) {
+    if ($ex instanceof PhabricatorSystemActionRateLimitException) {
+      $dialog = id(new AphrontDialogView())
+        ->setTitle(pht('Slow Down!'))
+        ->setUser($user)
+        ->setErrors(array(pht('You are being rate limited.')))
+        ->appendParagraph($ex->getMessage())
+        ->appendParagraph($ex->getRateExplanation())
+        ->addCancelButton('/', pht('Okaaaaaaaaaaaaaay...'));
 
+      $response = new AphrontDialogResponse();
+      $response->setDialog($dialog);
+      return $response;
+    }
+
+    if ($ex instanceof PhabricatorAuthHighSecurityRequiredException) {
+
+      $form = id(new PhabricatorAuthSessionEngine())->renderHighSecurityForm(
+        $ex->getFactors(),
+        $ex->getFactorValidationResults(),
+        $user,
+        $request);
+
+      $dialog = id(new AphrontDialogView())
+        ->setUser($user)
+        ->setTitle(pht('Entering High Security'))
+        ->setShortTitle(pht('Security Checkpoint'))
+        ->setWidth(AphrontDialogView::WIDTH_FORM)
+        ->addHiddenInput(AphrontRequest::TYPE_HISEC, true)
+        ->setErrors(
+          array(
+            pht(
+              'You are taking an action which requires you to enter '.
+              'high security.'),
+          ))
+        ->appendParagraph(
+          pht(
+            'High security mode helps protect your account from security '.
+            'threats, like session theft or someone messing with your stuff '.
+            'while you\'re grabbing a coffee. To enter high security mode, '.
+            'confirm your credentials.'))
+        ->appendChild($form->buildLayoutView())
+        ->appendParagraph(
+          pht(
+            'Your account will remain in high security mode for a short '.
+            'period of time. When you are finished taking sensitive '.
+            'actions, you should leave high security.'))
+        ->setSubmitURI($request->getPath())
+        ->addCancelButton($ex->getCancelURI())
+        ->addSubmitButton(pht('Enter High Security'));
+
+      foreach ($request->getPassthroughRequestParameters() as $key => $value) {
+        $dialog->addHiddenInput($key, $value);
+      }
+
+      $response = new AphrontDialogResponse();
+      $response->setDialog($dialog);
+      return $response;
+    }
+
+    if ($ex instanceof PhabricatorPolicyException) {
       if (!$user->isLoggedIn()) {
         // If the user isn't logged in, just give them a login form. This is
         // probably a generally more useful response than a policy dialog that
@@ -129,13 +152,14 @@ class AphrontDefaultApplicationConfiguration
         //
         // Possibly we should add a header here like "you need to login to see
         // the thing you are trying to look at".
-        $login_controller = new PhabricatorAuthStartController($request);
+        $login_controller = new PhabricatorAuthStartController();
+        $login_controller->setRequest($request);
 
-        $auth_app_class = 'PhabricatorApplicationAuth';
+        $auth_app_class = 'PhabricatorAuthApplication';
         $auth_app = PhabricatorApplication::getByClass($auth_app_class);
         $login_controller->setCurrentApplication($auth_app);
 
-        return $login_controller->processRequest();
+        return $login_controller->handleRequest($request);
       }
 
       $list = $ex->getMoreInfo();
@@ -170,9 +194,9 @@ class AphrontDefaultApplicationConfiguration
         ->appendChild($content);
 
       if ($this->getRequest()->isAjax()) {
-        $dialog->addCancelButton('/', 'Close');
+        $dialog->addCancelButton('/', pht('Close'));
       } else {
-        $dialog->addCancelButton('/', $is_serious ? 'OK' : 'Away With Thee');
+        $dialog->addCancelButton('/', pht('OK'));
       }
 
       $response = new AphrontDialogResponse();
@@ -181,7 +205,7 @@ class AphrontDefaultApplicationConfiguration
     }
 
     if ($ex instanceof AphrontUsageException) {
-      $error = new AphrontErrorView();
+      $error = new PHUIErrorView();
       $error->setTitle($ex->getTitle());
       $error->appendChild($ex->getMessage());
 
@@ -196,14 +220,13 @@ class AphrontDefaultApplicationConfiguration
       return $response;
     }
 
-
     // Always log the unhandled exception.
     phlog($ex);
 
     $class    = get_class($ex);
     $message  = $ex->getMessage();
 
-    if ($ex instanceof AphrontQuerySchemaException) {
+    if ($ex instanceof AphrontSchemaQueryException) {
       $message .=
         "\n\n".
         "NOTE: This usually indicates that the MySQL schema has not been ".
@@ -250,15 +273,17 @@ class AphrontDefaultApplicationConfiguration
   }
 
   public function build404Controller() {
-    return array(new Phabricator404Controller($this->getRequest()), array());
+    return array(new Phabricator404Controller(), array());
   }
 
-  public function buildRedirectController($uri) {
+  public function buildRedirectController($uri, $external) {
     return array(
-      new PhabricatorRedirectController($this->getRequest()),
+      new PhabricatorRedirectController(),
       array(
         'uri' => $uri,
-      ));
+        'external' => $external,
+      ),
+    );
   }
 
 }

@@ -16,6 +16,17 @@ final class PhabricatorMarkupOneOff implements PhabricatorMarkupInterface {
 
   private $content;
   private $preserveLinebreaks;
+  private $engineRuleset;
+  private $disableCache;
+
+  public function setEngineRuleset($engine_ruleset) {
+    $this->engineRuleset = $engine_ruleset;
+    return $this;
+  }
+
+  public function getEngineRuleset() {
+    return $this->engineRuleset;
+  }
 
   public function setPreserveLinebreaks($preserve_linebreaks) {
     $this->preserveLinebreaks = $preserve_linebreaks;
@@ -31,12 +42,23 @@ final class PhabricatorMarkupOneOff implements PhabricatorMarkupInterface {
     return $this->content;
   }
 
+  public function setDisableCache($disable_cache) {
+    $this->disableCache = $disable_cache;
+    return $this;
+  }
+
+  public function getDisableCache() {
+    return $this->disableCache;
+  }
+
   public function getMarkupFieldKey($field) {
     return PhabricatorHash::digestForIndex($this->getContent()).':oneoff';
   }
 
   public function newMarkupEngine($field) {
-    if ($this->preserveLinebreaks) {
+    if ($this->engineRuleset) {
+      return PhabricatorMarkupEngine::getEngine($this->engineRuleset);
+    } else if ($this->preserveLinebreaks) {
       return PhabricatorMarkupEngine::getEngine();
     } else {
       return PhabricatorMarkupEngine::getEngine('nolinebreaks');
@@ -62,6 +84,10 @@ final class PhabricatorMarkupOneOff implements PhabricatorMarkupInterface {
   }
 
   public function shouldUseMarkupCache($field) {
+    if ($this->getDisableCache()) {
+      return false;
+    }
+
     return true;
   }
 

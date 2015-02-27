@@ -28,7 +28,7 @@ final class PhabricatorMailingListQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhabricatorMetaMTAMailingList();
     $conn_r = $table->establishConnection('r');
 
@@ -80,7 +80,7 @@ final class PhabricatorMailingListQuery
   }
 
   public function getQueryApplicationClass() {
-    return 'PhabricatorApplicationMailingLists';
+    return 'PhabricatorMailingListsApplication';
   }
 
 }

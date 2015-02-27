@@ -3,7 +3,7 @@
 final class PhabricatorRepositoryManagementRefsWorkflow
   extends PhabricatorRepositoryManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('refs')
       ->setExamples('**refs** [__options__] __repository__ ...')
@@ -27,8 +27,8 @@ final class PhabricatorRepositoryManagementRefsWorkflow
     if (!$repos) {
       throw new PhutilArgumentUsageException(
         pht(
-          "Specify one or more repositories to update refs for, ".
-          "by callsign."));
+          'Specify one or more repositories to update refs for, '.
+          'by callsign.'));
     }
 
     $console = PhutilConsole::getConsole();

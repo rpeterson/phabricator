@@ -28,7 +28,7 @@ final class PhabricatorBcryptPasswordHasher
   }
 
   public function getHumanReadableStrength() {
-    return pht("Good");
+    return pht('Good');
   }
 
   protected function getPasswordHash(PhutilOpaqueEnvelope $envelope) {
@@ -38,7 +38,7 @@ final class PhabricatorBcryptPasswordHasher
       'cost' => $this->getBcryptCost(),
     );
 
-    $raw_hash = password_hash($raw_input, CRYPT_BLOWFISH, $options);
+    $raw_hash = password_hash($raw_input, PASSWORD_BCRYPT, $options);
 
     return new PhutilOpaqueEnvelope($raw_hash);
   }

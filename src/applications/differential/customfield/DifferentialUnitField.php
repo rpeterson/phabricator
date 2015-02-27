@@ -113,6 +113,12 @@ final class DifferentialUnitField
         }
 
         $value = idx($test, 'name');
+
+        $namespace = idx($test, 'namespace');
+        if ($namespace) {
+          $value = $namespace.'::'.$value;
+        }
+
         if (!empty($test['link'])) {
           $value = phutil_tag(
             'a',
@@ -200,7 +206,7 @@ final class DifferentialUnitField
       }
     }
 
-    return "Show Full Unit Results (".implode(', ', $show).")";
+    return 'Show Full Unit Results ('.implode(', ', $show).')';
   }
 
   public function getWarningsForDetailView() {
@@ -208,6 +214,8 @@ final class DifferentialUnitField
 
     $warnings = array();
     if ($status < DifferentialUnitStatus::UNIT_WARN) {
+      // Don't show any warnings.
+    } else if ($status == DifferentialUnitStatus::UNIT_AUTO_SKIP) {
       // Don't show any warnings.
     } else if ($status == DifferentialUnitStatus::UNIT_POSTPONED) {
       $warnings[] = pht(

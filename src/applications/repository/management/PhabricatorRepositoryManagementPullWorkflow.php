@@ -3,7 +3,7 @@
 final class PhabricatorRepositoryManagementPullWorkflow
   extends PhabricatorRepositoryManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('pull')
       ->setExamples('**pull** __repository__ ...')
@@ -26,7 +26,7 @@ final class PhabricatorRepositoryManagementPullWorkflow
 
     if (!$repos) {
       throw new PhutilArgumentUsageException(
-        "Specify one or more repositories to pull, by callsign.");
+        'Specify one or more repositories to pull, by callsign.');
     }
 
     $console = PhutilConsole::getConsole();

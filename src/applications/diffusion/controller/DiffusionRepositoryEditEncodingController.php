@@ -3,8 +3,7 @@
 final class DiffusionRepositoryEditEncodingController
   extends DiffusionRepositoryEditController {
 
-  public function processRequest() {
-    $request = $this->getRequest();
+  protected function processDiffusionRequest(AphrontRequest $request) {
     $user = $request->getUser();
     $drequest = $this->diffusionRequest;
     $repository = $drequest->getRepository();
@@ -87,7 +86,6 @@ final class DiffusionRepositoryEditEncodingController
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 
@@ -107,7 +105,7 @@ Phabricator handles text encodings.
 EOT
     ,
     PhabricatorEnv::getDoclink(
-      'article/User_Guide_UTF-8_and_Character_Encoding.html'));
+      'User Guide: UTF-8 and Character Encoding'));
   }
 
 }

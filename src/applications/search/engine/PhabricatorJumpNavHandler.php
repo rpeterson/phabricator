@@ -4,10 +4,10 @@ final class PhabricatorJumpNavHandler {
 
   public static function getJumpResponse(PhabricatorUser $viewer, $jump) {
     $jump = trim($jump);
-    $help_href = PhabricatorEnv::getDocLink('article/Jump_Nav_User_Guide.html');
+    $help_href = PhabricatorEnv::getDocLink('Jump Nav User Guide');
 
     $patterns = array(
-      '/^help/i'                  => 'uri:'.$help_href,
+      '/^help/i'                  => 'exturi:'.$help_href,
       '/^a$/i'                    => 'uri:/audit/',
       '/^f$/i'                    => 'uri:/feed/',
       '/^d$/i'                    => 'uri:/differential/',
@@ -28,6 +28,10 @@ final class PhabricatorJumpNavHandler {
         if (!strncmp($effect, 'uri:', 4)) {
           return id(new AphrontRedirectResponse())
             ->setURI(substr($effect, 4));
+        } else if (!strncmp($effect, 'exturi:', 7)) {
+          return id(new AphrontRedirectResponse())
+            ->setURI(substr($effect, 7))
+            ->setIsExternal(true);
         } else {
           switch ($effect) {
             case 'user':

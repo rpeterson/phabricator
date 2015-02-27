@@ -5,6 +5,10 @@ final class PhabricatorApplicationTransactionDetailController
 
   private $phid;
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function willProcessRequest(array $data) {
     $this->phid = $data['phid'];
   }
@@ -23,24 +27,12 @@ final class PhabricatorApplicationTransactionDetailController
 
     $details = $xaction->renderChangeDetails($viewer);
 
-    // Take an educated guess at the URI where the transactions appear so we
-    // can send the cancel button somewhere sensible. This won't always get the
-    // best answer (for example, Diffusion's history is visible on a page other
-    // than the main object view page) but should always get a reasonable one.
-
-    $cancel_uri = '/';
-    $handle = id(new PhabricatorHandleQuery())
-      ->setViewer($viewer)
-      ->withPHIDs(array($xaction->getObjectPHID()))
-      ->executeOne();
-    if ($handle) {
-      $cancel_uri = $handle->getURI();
-    }
-
+    $cancel_uri = $this->guessCancelURI($viewer, $xaction);
     $dialog = id(new AphrontDialogView())
       ->setUser($viewer)
       ->setTitle(pht('Change Details'))
       ->setWidth(AphrontDialogView::WIDTH_FULL)
+      ->setFlush(true)
       ->appendChild($details)
       ->addCancelButton($cancel_uri);
 

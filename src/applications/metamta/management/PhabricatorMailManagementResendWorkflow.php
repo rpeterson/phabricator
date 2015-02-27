@@ -8,7 +8,7 @@ final class PhabricatorMailManagementResendWorkflow
       ->setName('resend')
       ->setSynopsis('Send mail again.')
       ->setExamples(
-        "**resend** --id 1 --id 2")
+        '**resend** --id 1 --id 2')
       ->setArguments(
         array(
           array(
@@ -38,30 +38,21 @@ final class PhabricatorMailManagementResendWorkflow
       $missing = array_diff_key($ids, $messages);
       if ($missing) {
         throw new PhutilArgumentUsageException(
-          "Some specified messages do not exist: ".
+          'Some specified messages do not exist: '.
           implode(', ', array_keys($missing)));
       }
     }
 
     foreach ($messages as $message) {
-      if ($message->getStatus() == PhabricatorMetaMTAMail::STATUS_QUEUE) {
-        if ($message->getWorkerTaskID()) {
-          $console->writeOut(
-            "Message #%d is already queued with an assigned send task.\n",
-            $message->getID());
-          continue;
-        }
-      }
-
       $message->setStatus(PhabricatorMetaMTAMail::STATUS_QUEUE);
       $message->save();
 
       $mailer_task = PhabricatorWorker::scheduleTask(
         'PhabricatorMetaMTAWorker',
-        $message->getID());
-
-      $message->setWorkerTaskID($mailer_task->getID());
-      $message->save();
+        $message->getID(),
+        array(
+          'priority' => PhabricatorWorker::PRIORITY_ALERTS,
+        ));
 
       $console->writeOut(
         "Queued message #%d for resend.\n",

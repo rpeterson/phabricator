@@ -31,19 +31,6 @@ abstract class DifferentialCustomField
     return parent::shouldEnableForRole($role);
   }
 
-  protected function renderHandleList(array $handles) {
-    if (!$handles) {
-      return null;
-    }
-
-    $out = array();
-    foreach ($handles as $handle) {
-      $out[] = $handle->renderLink();
-    }
-
-    return phutil_implode_html(phutil_tag('br'), $out);
-  }
-
   public function getRequiredDiffPropertiesForRevisionView() {
     if ($this->getProxy()) {
       return $this->getProxy()->getRequiredDiffPropertiesForRevisionView();
@@ -84,6 +71,14 @@ abstract class DifferentialCustomField
     if ($this->getProxy()) {
       return $this->getProxy()->getWarningsForDetailView();
     }
+    return array();
+  }
+
+  public function getRequiredHandlePHIDsForRevisionHeaderWarnings() {
+    return array();
+  }
+
+  public function getWarningsForRevisionHeader(array $handles) {
     return array();
   }
 

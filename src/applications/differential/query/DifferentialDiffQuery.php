@@ -34,7 +34,7 @@ final class DifferentialDiffQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new DifferentialDiff();
     $conn_r = $table->establishConnection('r');
 
@@ -49,7 +49,7 @@ final class DifferentialDiffQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $diffs) {
+  protected function willFilterPage(array $diffs) {
     $revision_ids = array_filter(mpull($diffs, 'getRevisionID'));
 
     $revisions = array();
@@ -62,7 +62,6 @@ final class DifferentialDiffQuery
 
     foreach ($diffs as $key => $diff) {
       if (!$diff->getRevisionID()) {
-        $diff->attachRevision(null);
         continue;
       }
 
@@ -76,26 +75,26 @@ final class DifferentialDiffQuery
     }
 
 
-    if ($this->needChangesets) {
-      $this->loadChangesets($diffs);
+    if ($diffs && $this->needChangesets) {
+      $diffs = $this->loadChangesets($diffs);
     }
 
-    if ($this->needArcanistProjects) {
-      $this->loadArcanistProjects($diffs);
+    if ($diffs && $this->needArcanistProjects) {
+      $diffs = $this->loadArcanistProjects($diffs);
     }
 
     return $diffs;
   }
 
   private function loadChangesets(array $diffs) {
-    foreach ($diffs as $diff) {
-      $diff->attachChangesets(
-        $diff->loadRelatives(new DifferentialChangeset(), 'diffID'));
-      foreach ($diff->getChangesets() as $changeset) {
-        $changeset->attachHunks(
-          $changeset->loadRelatives(new DifferentialHunk(), 'changesetID'));
-      }
-    }
+    id(new DifferentialChangesetQuery())
+      ->setViewer($this->getViewer())
+      ->setParentQuery($this)
+      ->withDiffs($diffs)
+      ->needAttachToDiffs(true)
+      ->needHunks(true)
+      ->execute();
+
     return $diffs;
   }
 
@@ -151,7 +150,7 @@ final class DifferentialDiffQuery
   }
 
   public function getQueryApplicationClass() {
-    return 'PhabricatorApplicationDifferential';
+    return 'PhabricatorDifferentialApplication';
   }
 
 }

@@ -44,7 +44,7 @@ final class DifferentialTestPlanField
   protected function getCoreFieldRequiredErrorString() {
     return pht(
       'You must provide a test plan. Describe the actions you performed '.
-      'to verify the behvaior of this change.');
+      'to verify the behavior of this change.');
   }
 
   public function readValueFromRequest(AphrontRequest $request) {
@@ -53,6 +53,7 @@ final class DifferentialTestPlanField
 
   public function renderEditControl(array $handles) {
     return id(new PhabricatorRemarkupControl())
+      ->setUser($this->getViewer())
       ->setName($this->getFieldKey())
       ->setValue($this->getValue())
       ->setError($this->getFieldError())
@@ -71,8 +72,7 @@ final class DifferentialTestPlanField
   }
 
   public function getApplicationTransactionTitleForFeed(
-    PhabricatorApplicationTransaction $xaction,
-    PhabricatorFeedStory $story) {
+    PhabricatorApplicationTransaction $xaction) {
 
     $object_phid = $xaction->getObjectPHID();
     $author_phid = $xaction->getAuthorPHID();
@@ -175,6 +175,27 @@ final class DifferentialTestPlanField
       throw new DifferentialFieldValidationException(
         $this->getCoreFieldRequiredErrorString());
     }
+  }
+
+  public function shouldAppearInTransactionMail() {
+    return true;
+  }
+
+  public function updateTransactionMailBody(
+    PhabricatorMetaMTAMailBody $body,
+    PhabricatorApplicationTransactionEditor $editor,
+    array $xactions) {
+
+    if (!$editor->getIsNewObject()) {
+      return;
+    }
+
+    $test_plan = $this->getValue();
+    if (!strlen(trim($test_plan))) {
+      return;
+    }
+
+    $body->addTextSection(pht('TEST PLAN'), $test_plan);
   }
 
 

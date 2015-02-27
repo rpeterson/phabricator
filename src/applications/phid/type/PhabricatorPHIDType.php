@@ -2,7 +2,28 @@
 
 abstract class PhabricatorPHIDType {
 
-  abstract public function getTypeConstant();
+  final public function getTypeConstant() {
+    $class = new ReflectionClass($this);
+
+    $const = $class->getConstant('TYPECONST');
+    if ($const === false) {
+      throw new Exception(
+        pht(
+          'PHIDType class "%s" must define an TYPECONST property.',
+          get_class($this)));
+    }
+
+    if (!is_string($const) || !preg_match('/^[A-Z]{4}$/', $const)) {
+      throw new Exception(
+        pht(
+          'PHIDType class "%s" has an invalid TYPECONST property. PHID '.
+          'constants must be a four character uppercase string.',
+          get_class($this)));
+    }
+
+    return $const;
+  }
+
   abstract public function getTypeName();
 
   public function newObject() {
@@ -10,6 +31,20 @@ abstract class PhabricatorPHIDType {
   }
 
   public function getTypeIcon() {
+    return null;
+  }
+
+
+  /**
+   * Get the class name for the application this type belongs to.
+   *
+   * @return string|null Class name of the corresponding application, or null
+   *   if the type is not bound to an application.
+   */
+  public function getPHIDTypeApplicationClass() {
+    // TODO: Some day this should probably be abstract, but for now it only
+    // affects global search and there's no real burning need to go classify
+    // every PHID type.
     return null;
   }
 
@@ -100,9 +135,18 @@ abstract class PhabricatorPHIDType {
   public function loadNamedObjects(
     PhabricatorObjectQuery $query,
     array $names) {
-    throw new Exception("Not implemented!");
+    throw new PhutilMethodNotImplementedException();
   }
 
+
+  /**
+   * Get all known PHID types.
+   *
+   * To get PHID types a given user has access to, see
+   * @{method:getAllInstalledTypes}.
+   *
+   * @return dict<string, PhabricatorPHIDType> Map of type constants to types.
+   */
   public static function getAllTypes() {
     static $types;
     if ($types === null) {
@@ -131,6 +175,50 @@ abstract class PhabricatorPHIDType {
     }
 
     return $types;
+  }
+
+
+  /**
+   * Get all PHID types of applications installed for a given viewer.
+   *
+   * @param PhabricatorUser Viewing user.
+   * @return dict<string, PhabricatorPHIDType> Map of constants to installed
+   *  types.
+   */
+  public static function getAllInstalledTypes(PhabricatorUser $viewer) {
+    $all_types = self::getAllTypes();
+
+    $installed_types = array();
+
+    $app_classes = array();
+    foreach ($all_types as $key => $type) {
+      $app_class = $type->getPHIDTypeApplicationClass();
+
+      if ($app_class === null) {
+        // If the PHID type isn't bound to an application, include it as
+        // installed.
+        $installed_types[$key] = $type;
+        continue;
+      }
+
+      // Otherwise, we need to check if this application is installed before
+      // including the PHID type.
+      $app_classes[$app_class][$key] = $type;
+    }
+
+    if ($app_classes) {
+      $apps = id(new PhabricatorApplicationQuery())
+        ->setViewer($viewer)
+        ->withInstalled(true)
+        ->withClasses(array_keys($app_classes))
+        ->execute();
+
+      foreach ($apps as $app_class => $app) {
+        $installed_types += $app_classes[$app_class];
+      }
+    }
+
+    return $installed_types;
   }
 
 }

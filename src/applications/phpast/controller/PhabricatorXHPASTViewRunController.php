@@ -11,7 +11,7 @@ final class PhabricatorXHPASTViewRunController
     if ($request->isFormPost()) {
       $source = $request->getStr('source');
 
-      $future = xhpast_get_parser_future($source);
+      $future = PhutilXHPASTBinary::getParserFuture($source);
       $resolved = $future->resolve();
 
       // This is just to let it throw exceptions if stuff is broken.
@@ -51,7 +51,6 @@ final class PhabricatorXHPASTViewRunController
       $form_box,
       array(
         'title' => pht('XHPAST View'),
-        'device' => true,
       ));
   }
 

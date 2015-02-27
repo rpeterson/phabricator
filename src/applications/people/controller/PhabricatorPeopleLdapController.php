@@ -3,9 +3,9 @@
 final class PhabricatorPeopleLdapController
   extends PhabricatorPeopleController {
 
-  public function processRequest() {
-
-    $request = $this->getRequest();
+  public function handleRequest(AphrontRequest $request) {
+    $this->requireApplicationCapability(
+      PeopleCreateUsersCapability::CAPABILITY);
     $admin = $request->getUser();
 
     $content = array();
@@ -16,26 +16,25 @@ final class PhabricatorPeopleLdapController
       ->setUser($admin)
       ->appendChild(
         id(new AphrontFormTextControl())
-        ->setLabel(pht('LDAP username'))
-        ->setName('username'))
+          ->setLabel(pht('LDAP username'))
+          ->setName('username'))
       ->appendChild(
         id(new AphrontFormPasswordControl())
-        ->setLabel(pht('Password'))
-        ->setName('password'))
+          ->setDisableAutocomplete(true)
+          ->setLabel(pht('Password'))
+          ->setName('password'))
       ->appendChild(
         id(new AphrontFormTextControl())
-        ->setLabel(pht('LDAP query'))
-        ->setCaption(pht('A filter such as (objectClass=*)'))
-        ->setName('query'))
+          ->setLabel(pht('LDAP query'))
+          ->setCaption(pht('A filter such as (objectClass=*)'))
+          ->setName('query'))
       ->appendChild(
         id(new AphrontFormSubmitControl())
-        ->setValue(pht('Search')));
+          ->setValue(pht('Search')));
 
-    $panel = id(new AphrontPanelView())
-      ->setHeader(pht('Import LDAP Users'))
-      ->setNoBackground()
-      ->setWidth(AphrontPanelView::WIDTH_FORM)
-      ->appendChild($form);
+    $panel = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Import LDAP Users'))
+      ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
     $crumbs->addTextCrumb(
@@ -61,7 +60,6 @@ final class PhabricatorPeopleLdapController
       $nav,
       array(
         'title'  => pht('Import Ldap Users'),
-        'device' => true,
       ));
   }
 
@@ -71,15 +69,15 @@ final class PhabricatorPeopleLdapController
     $emails = $request->getArr('email');
     $names = $request->getArr('name');
 
-    $notice_view = new AphrontErrorView();
-    $notice_view->setSeverity(AphrontErrorView::SEVERITY_NOTICE);
-    $notice_view->setTitle(pht("Import Successful"));
+    $notice_view = new PHUIErrorView();
+    $notice_view->setSeverity(PHUIErrorView::SEVERITY_NOTICE);
+    $notice_view->setTitle(pht('Import Successful'));
     $notice_view->setErrors(array(
-      pht("Successfully imported users from LDAP"),
+      pht('Successfully imported users from LDAP'),
     ));
 
     $list = new PHUIObjectItemListView();
-    $list->setNoDataString(pht("No users imported?"));
+    $list->setNoDataString(pht('No users imported?'));
 
     foreach ($usernames as $username) {
       $user = new PhabricatorUser();
@@ -131,9 +129,9 @@ final class PhabricatorPeopleLdapController
 
     $search = $request->getStr('query');
 
-    $ldap_provider = PhabricatorAuthProviderLDAP::getLDAPProvider();
+    $ldap_provider = PhabricatorLDAPAuthProvider::getLDAPProvider();
     if (!$ldap_provider) {
-      throw new Exception("No LDAP provider enabled!");
+      throw new Exception('No LDAP provider enabled!');
     }
 
     $ldap_adapter = $ldap_provider->getAdapter();

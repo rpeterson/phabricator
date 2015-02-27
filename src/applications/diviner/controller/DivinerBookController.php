@@ -26,6 +26,7 @@ final class DivinerBookController extends DivinerController {
     }
 
     $crumbs = $this->buildApplicationCrumbs();
+    $crumbs->setBorder(true);
 
     $crumbs->addTextCrumb(
       $book->getShortTitle(),
@@ -38,6 +39,8 @@ final class DivinerBookController extends DivinerController {
 
     $document = new PHUIDocumentView();
     $document->setHeader($header);
+    $document->addClass('diviner-view');
+
     $document->setFontKit(PHUIDocumentView::FONT_SOURCE_SANS);
 
     $properties = $this->buildPropertyList($book);
@@ -95,7 +98,6 @@ final class DivinerBookController extends DivinerController {
       ),
       array(
         'title' => $book->getTitle(),
-        'device' => true,
       ));
   }
 

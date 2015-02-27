@@ -66,20 +66,14 @@ final class DiffusionLintSaveRunner {
     }
 
     $branch_name = $api->getBranchName();
-    $this->branch = new PhabricatorRepositoryBranch();
-    $this->conn = $this->branch->establishConnection('w');
-    $this->branch = $this->branch->loadOneWhere(
-      'repositoryID = %d AND name = %s',
+
+    $this->branch = PhabricatorRepositoryBranch::loadOrCreateBranch(
       $project->getRepositoryID(),
       $branch_name);
+    $this->conn = $this->branch->establishConnection('w');
 
     $this->lintCommit = null;
-    if (!$this->branch) {
-      $this->branch = id(new PhabricatorRepositoryBranch())
-        ->setRepositoryID($project->getRepositoryID())
-        ->setName($branch_name)
-        ->save();
-    } else if (!$this->all) {
+    if (!$this->all) {
       $this->lintCommit = $this->branch->getLintCommit();
     }
 
@@ -94,6 +88,7 @@ final class DiffusionLintSaveRunner {
         $this->lintCommit = null;
       }
     }
+
 
     if (!$this->lintCommit) {
       $where = ($this->svnRoot
@@ -241,7 +236,6 @@ final class DiffusionLintSaveRunner {
     foreach ($this->blame as $path => $lines) {
       $drequest = DiffusionRequest::newFromDictionary(array(
         'user' => PhabricatorUser::getOmnipotentUser(),
-        'initFromConduit' => false,
         'repository' => $repository,
         'branch' => $this->branch->getName(),
         'path' => $path,
@@ -255,7 +249,9 @@ final class DiffusionLintSaveRunner {
 
     $authors = array();
 
-    foreach (Futures($futures)->limit(8) as $path => $future) {
+    $futures = id(new FutureIterator($futures))
+      ->limit(8);
+    foreach ($futures as $path => $future) {
       $queries[$path]->loadFileContentFromFuture($future);
       list(, $rev_list, $blame_dict) = $queries[$path]->getBlameData();
       foreach (array_keys($this->blame[$path]) as $line) {

@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhamePost extends PhameDAO
   implements
     PhabricatorPolicyInterface,
@@ -59,6 +56,10 @@ final class PhamePost extends PhameDAO
     return PhabricatorEnv::getProductionURI($uri);
   }
 
+  public function getEditURI() {
+    return '/phame/post/edit/'.$this->getID().'/';
+  }
+
   public function isDraft() {
     return $this->getVisibility() == self::VISIBILITY_DRAFT;
   }
@@ -81,18 +82,52 @@ final class PhamePost extends PhameDAO
     return idx($config_data, 'comments_widget', 'none');
   }
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID   => true,
       self::CONFIG_SERIALIZATION => array(
         'configData' => self::SERIALIZATION_JSON,
+      ),
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'title' => 'text255',
+        'phameTitle' => 'sort64',
+        'visibility' => 'uint32',
+
+        // T6203/NULLABILITY
+        // These seem like they should always be non-null?
+        'blogPHID' => 'phid?',
+        'body' => 'text?',
+        'configData' => 'text?',
+
+        // T6203/NULLABILITY
+        // This one probably should be nullable?
+        'datePublished' => 'epoch',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'phameTitle' => array(
+          'columns' => array('bloggerPHID', 'phameTitle'),
+          'unique' => true,
+        ),
+        'bloggerPosts' => array(
+          'columns' => array(
+            'bloggerPHID',
+            'visibility',
+            'datePublished',
+            'id',
+          ),
+        ),
       ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPhamePHIDTypePost::TYPECONST);
+      PhabricatorPhamePostPHIDType::TYPECONST);
   }
 
   public function toDictionary() {
@@ -123,7 +158,7 @@ final class PhamePost extends PhameDAO
     $options = array();
 
     if ($current == 'facebook' ||
-        PhabricatorAuthProviderOAuthFacebook::getFacebookApplicationID()) {
+        PhabricatorFacebookAuthProvider::getFacebookApplicationID()) {
       $options['facebook'] = 'Facebook';
     }
     if ($current == 'disqus' ||

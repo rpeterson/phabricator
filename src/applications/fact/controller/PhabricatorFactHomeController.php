@@ -2,6 +2,10 @@
 
 final class PhabricatorFactHomeController extends PhabricatorFactController {
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function processRequest() {
     $request = $this->getRequest();
     $user = $request->getUser();
@@ -53,13 +57,18 @@ final class PhabricatorFactHomeController extends PhabricatorFactController {
 
     $chart_form = $this->buildChartForm();
 
-    return $this->buildStandardPageResponse(
+    $crumbs = $this->buildApplicationCrumbs();
+    $crumbs->addTextCrumb(pht('Home'));
+
+    return $this->buildApplicationPage(
       array(
+        $crumbs,
         $chart_form,
         $panel,
       ),
       array(
-        'title' => 'Facts!',
+        'title' => 'Facts',
+        'device' => false,
       ));
   }
 
@@ -88,8 +97,8 @@ final class PhabricatorFactHomeController extends PhabricatorFactController {
     }
 
     if (!$options) {
-      return id(new AphrontErrorView())
-        ->setSeverity(AphrontErrorView::SEVERITY_NOTICE)
+      return id(new PHUIErrorView())
+        ->setSeverity(PHUIErrorView::SEVERITY_NOTICE)
         ->setTitle(pht('No Chartable Facts'))
         ->appendChild(phutil_tag(
           'p',

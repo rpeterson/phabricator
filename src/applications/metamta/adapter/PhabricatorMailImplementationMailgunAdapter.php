@@ -7,6 +7,7 @@ final class PhabricatorMailImplementationMailgunAdapter
   extends PhabricatorMailImplementationAdapter {
 
   private $params = array();
+  private $attachments = array();
 
   public function setFrom($email, $name = '') {
     $this->params['from'] = $email;
@@ -18,10 +19,7 @@ final class PhabricatorMailImplementationMailgunAdapter
     if (empty($this->params['reply-to'])) {
       $this->params['reply-to'] = array();
     }
-    $this->params['reply-to'][] = array(
-      'email' => $email,
-      'name'  => $name,
-    );
+    $this->params['reply-to'][] = "{$name} <{$email}>";
     return $this;
   }
 
@@ -40,9 +38,13 @@ final class PhabricatorMailImplementationMailgunAdapter
   }
 
   public function addAttachment($data, $filename, $mimetype) {
-    // TODO: implement attachments. Requires changes in HTTPSFuture
-    throw new Exception(
-      "Mailgun adapter does not currently support attachments.");
+    $this->attachments[] = array(
+      'data' => $data,
+      'name' => $filename,
+      'type' => $mimetype,
+    );
+
+    return $this;
   }
 
   public function addHeader($header_name, $header_value) {
@@ -55,18 +57,18 @@ final class PhabricatorMailImplementationMailgunAdapter
     return $this;
   }
 
+  public function setHTMLBody($html_body) {
+    $this->params['html-body'] = $html_body;
+    return $this;
+  }
+
   public function setSubject($subject) {
     $this->params['subject'] = $subject;
     return $this;
   }
 
-  public function setIsHTML($is_html) {
-    $this->params['is-html'] = $is_html;
-    return $this;
-  }
-
   public function supportsMessageIDHeader() {
-    return false;
+    return true;
   }
 
   public function send() {
@@ -74,13 +76,12 @@ final class PhabricatorMailImplementationMailgunAdapter
     $domain = PhabricatorEnv::getEnvConfig('mailgun.domain');
     $params = array();
 
-    $params['to'] = idx($this->params, 'tos', array());
+    $params['to'] = implode(', ', idx($this->params, 'tos', array()));
     $params['subject'] = idx($this->params, 'subject');
+    $params['text'] = idx($this->params, 'body');
 
-    if (idx($this->params, 'is-html')) {
-      $params['html'] = idx($this->params, 'body');
-    } else {
-      $params['text'] = idx($this->params, 'body');
+    if (idx($this->params, 'html-body')) {
+      $params['html'] = idx($this->params, 'html-body');
     }
 
     $from = idx($this->params, 'from');
@@ -92,11 +93,11 @@ final class PhabricatorMailImplementationMailgunAdapter
 
     if (idx($this->params, 'reply-to')) {
       $replyto = $this->params['reply-to'];
-      $params['h:reply-to'] = $replyto;
+      $params['h:reply-to'] = implode(', ', $replyto);
     }
 
     if (idx($this->params, 'ccs')) {
-      $params['cc'] = $this->params['ccs'];
+      $params['cc'] = implode(', ', $this->params['ccs']);
     }
 
     foreach (idx($this->params, 'headers', array()) as $header) {
@@ -108,6 +109,14 @@ final class PhabricatorMailImplementationMailgunAdapter
       "https://api:{$key}@api.mailgun.net/v2/{$domain}/messages",
       $params);
     $future->setMethod('POST');
+
+    foreach ($this->attachments as $attachment) {
+      $future->attachFileData(
+        'attachment',
+        $attachment['data'],
+        $attachment['name'],
+        $attachment['type']);
+    }
 
     list($body) = $future->resolvex();
 

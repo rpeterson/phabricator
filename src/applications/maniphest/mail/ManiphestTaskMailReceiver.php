@@ -3,7 +3,7 @@
 final class ManiphestTaskMailReceiver extends PhabricatorObjectMailReceiver {
 
   public function isEnabled() {
-    $app_class = 'PhabricatorApplicationManiphest';
+    $app_class = 'PhabricatorManiphestApplication';
     return PhabricatorApplication::isClassInstalled($app_class);
   }
 
@@ -17,6 +17,8 @@ final class ManiphestTaskMailReceiver extends PhabricatorObjectMailReceiver {
     $results = id(new ManiphestTaskQuery())
       ->setViewer($viewer)
       ->withIDs(array($id))
+      ->needSubscriberPHIDs(true)
+      ->needProjectPHIDs(true)
       ->execute();
 
     return head($results);

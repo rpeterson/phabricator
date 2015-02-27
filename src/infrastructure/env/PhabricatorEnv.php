@@ -55,6 +55,7 @@ final class PhabricatorEnv {
   private static $overrideSource;
   private static $requestBaseURI;
   private static $cache;
+  private static $localeCode;
 
   /**
    * @phutil-external-symbol class PhabricatorStartup
@@ -112,12 +113,45 @@ final class PhabricatorEnv {
     // subprocess environments.
     $_ENV['PATH'] = $env_path;
 
+
+    // If an instance identifier is defined, write it into the environment so
+    // it's available to subprocesses.
+    $instance = PhabricatorEnv::getEnvConfig('cluster.instance');
+    if (strlen($instance)) {
+      putenv('PHABRICATOR_INSTANCE='.$instance);
+      $_ENV['PHABRICATOR_INSTANCE'] = $instance;
+    }
+
     PhabricatorEventEngine::initialize();
 
-    $translation = PhabricatorEnv::newObjectFromConfig('translation.provider');
-    PhutilTranslator::getInstance()
-      ->setLanguage($translation->getLanguage())
-      ->addTranslations($translation->getTranslations());
+    // TODO: Add a "locale.default" config option once we have some reasonable
+    // defaults which aren't silly nonsense.
+    self::setLocaleCode('en_US');
+  }
+
+  public static function setLocaleCode($locale_code) {
+    if ($locale_code == self::$localeCode) {
+      return;
+    }
+
+    try {
+      $locale = PhutilLocale::loadLocale($locale_code);
+      $translations = PhutilTranslation::getTranslationMapForLocale(
+        $locale_code);
+
+      $override = PhabricatorEnv::getEnvConfig('translation.override');
+      if (!is_array($override)) {
+        $override = array();
+      }
+
+      PhutilTranslator::getInstance()
+        ->setLocale($locale)
+        ->setTranslations($override + $translations);
+
+      self::$localeCode = $locale_code;
+    } catch (Exception $ex) {
+      // Just ignore this; the user likely has an out-of-date locale code.
+    }
   }
 
   private static function buildConfigurationSourceStack() {
@@ -139,7 +173,7 @@ final class PhabricatorEnv {
 
     $stack->pushSource(
       id(new PhabricatorConfigLocalSource())
-        ->setName(pht("Local Config")));
+        ->setName(pht('Local Config')));
 
     // If the install overrides the database adapter, we might need to load
     // the database adapter class before we can push on the database config.
@@ -153,10 +187,19 @@ final class PhabricatorEnv {
     // pull in all options from non-phabricator libraries now they are loaded.
     $default_source->loadExternalOptions();
 
+    // If this install has site config sources, load them now.
+    $site_sources = id(new PhutilSymbolLoader())
+      ->setAncestorClass('PhabricatorConfigSiteSource')
+      ->loadObjects();
+    $site_sources = msort($site_sources, 'getPriority');
+    foreach ($site_sources as $site_source) {
+      $stack->pushSource($site_source);
+    }
+
     try {
       $stack->pushSource(
         id(new PhabricatorConfigDatabaseSource('default'))
-          ->setName(pht("Database")));
+          ->setName(pht('Database')));
     } catch (AphrontQueryException $exception) {
       // If the database is not available, just skip this configuration
       // source. This happens during `bin/storage upgrade`, `bin/conf` before
@@ -167,7 +210,7 @@ final class PhabricatorEnv {
   public static function repairConfig($key, $value) {
     if (!self::$repairSource) {
       self::$repairSource = id(new PhabricatorConfigDictionarySource(array()))
-        ->setName(pht("Repaired Config"));
+        ->setName(pht('Repaired Config'));
       self::$sourceStack->pushSource(self::$repairSource);
     }
     self::$repairSource->setKeys(array($key => $value));
@@ -177,7 +220,7 @@ final class PhabricatorEnv {
   public static function overrideConfig($key, $value) {
     if (!self::$overrideSource) {
       self::$overrideSource = id(new PhabricatorConfigDictionarySource(array()))
-        ->setName(pht("Overridden Config"));
+        ->setName(pht('Overridden Config'));
       self::$sourceStack->pushSource(self::$overrideSource);
     }
     self::$overrideSource->setKeys(array($key => $value));
@@ -219,6 +262,106 @@ final class PhabricatorEnv {
     }
 
     return $env;
+  }
+
+  public static function calculateEnvironmentHash() {
+    $keys = self::getKeysForConsistencyCheck();
+
+    $values = array();
+    foreach ($keys as $key) {
+      $values[$key] = self::getEnvConfigIfExists($key);
+    }
+
+    return PhabricatorHash::digest(json_encode($values));
+  }
+
+  /**
+   * Returns a summary of non-default configuration settings to allow the
+   * "daemons and web have different config" setup check to list divergent
+   * keys.
+   */
+  public static function calculateEnvironmentInfo() {
+    $keys = self::getKeysForConsistencyCheck();
+
+    $info = array();
+
+    $defaults = id(new PhabricatorConfigDefaultSource())->getAllKeys();
+    foreach ($keys as $key) {
+      $current = self::getEnvConfigIfExists($key);
+      $default = idx($defaults, $key, null);
+      if ($current !== $default) {
+        $info[$key] = PhabricatorHash::digestForIndex(json_encode($current));
+      }
+    }
+
+    $keys_hash = array_keys($defaults);
+    sort($keys_hash);
+    $keys_hash = implode("\0", $keys_hash);
+    $keys_hash = PhabricatorHash::digestForIndex($keys_hash);
+
+    return array(
+      'version' => 1,
+      'keys' => $keys_hash,
+      'values' => $info,
+    );
+  }
+
+
+  /**
+   * Compare two environment info summaries to generate a human-readable
+   * list of discrepancies.
+   */
+  public static function compareEnvironmentInfo(array $u, array $v) {
+    $issues = array();
+
+    $uversion = idx($u, 'version');
+    $vversion = idx($v, 'version');
+    if ($uversion != $vversion) {
+      $issues[] = pht(
+        'The two configurations were generated by different versions '.
+        'of Phabricator.');
+
+      // These may not be comparable, so stop here.
+      return $issues;
+    }
+
+    if ($u['keys'] !== $v['keys']) {
+      $issues[] = pht(
+        'The two configurations have different keys. This usually means '.
+        'that they are running different versions of Phabricator.');
+    }
+
+    $uval = idx($u, 'values', array());
+    $vval = idx($v, 'values', array());
+
+    $all_keys = array_keys($uval + $vval);
+
+    foreach ($all_keys as $key) {
+      $uv = idx($uval, $key);
+      $vv = idx($vval, $key);
+      if ($uv !== $vv) {
+        if ($uv && $vv) {
+          $issues[] = pht(
+            'The configuration key "%s" is set in both configurations, but '.
+            'set to different values.',
+            $key);
+        } else {
+          $issues[] = pht(
+            'The configuration key "%s" is set in only one configuration.',
+            $key);
+        }
+      }
+    }
+
+    return $issues;
+  }
+
+  private static function getKeysForConsistencyCheck() {
+    $keys = array_keys(self::getAllConfigKeys());
+    sort($keys);
+
+    $skip_keys = self::getEnvConfig('phd.variant-config');
+    return array_diff($keys, $skip_keys);
   }
 
 
@@ -336,8 +479,12 @@ final class PhabricatorEnv {
    *
    * @task read
    */
-  public static function getDoclink($resource) {
-    return 'http://www.phabricator.com/docs/phabricator/'.$resource;
+  public static function getDoclink($resource, $type = 'article') {
+    $uri = new PhutilURI('https://secure.phabricator.com/diviner/find/');
+    $uri->setQueryParam('name', $resource);
+    $uri->setQueryParam('type', $type);
+    $uri->setQueryParam('jump', true);
+    return (string)$uri;
   }
 
 
@@ -406,8 +553,8 @@ final class PhabricatorEnv {
     if ($stack_key !== $key) {
       self::$sourceStack->pushSource($source);
       throw new Exception(
-        "Scoped environments were destroyed in a diffent order than they ".
-        "were initialized.");
+        'Scoped environments were destroyed in a diffent order than they '.
+        'were initialized.');
     }
   }
 
@@ -458,6 +605,21 @@ final class PhabricatorEnv {
       return false;
     }
 
+    // Chrome (at a minimum) interprets backslashes in Location headers and the
+    // URL bar as forward slashes. This is probably intended to reduce user
+    // error caused by confusion over which key is "forward slash" vs "back
+    // slash".
+    //
+    // However, it means a URI like "/\evil.com" is interpreted like
+    // "//evil.com", which is a protocol relative remote URI.
+    //
+    // Since we currently never generate URIs with backslashes in them, reject
+    // these unconditionally rather than trying to figure out how browsers will
+    // interpret them.
+    if (preg_match('/\\\\/', $uri)) {
+      return false;
+    }
+
     // Valid URIs must begin with '/', followed by the end of the string or some
     // other non-'/' character. This rejects protocol-relative URIs like
     // "//evil.com/evil_stuff/".
@@ -489,6 +651,32 @@ final class PhabricatorEnv {
     return true;
   }
 
+  public static function isClusterRemoteAddress() {
+    $address = idx($_SERVER, 'REMOTE_ADDR');
+    if (!$address) {
+      throw new Exception(
+        pht(
+          'Unable to test remote address against cluster whitelist: '.
+          'REMOTE_ADDR is not defined.'));
+    }
+
+    return self::isClusterAddress($address);
+  }
+
+  public static function isClusterAddress($address) {
+    $cluster_addresses = PhabricatorEnv::getEnvConfig('cluster.addresses');
+    if (!$cluster_addresses) {
+      throw new Exception(
+        pht(
+          'Phabricator is not configured to serve cluster requests. '.
+          'Set `cluster.addresses` in the configuration to whitelist '.
+          'cluster hosts before sending requests that use a cluster '.
+          'authentication mechanism.'));
+    }
+
+    return PhutilCIDRList::newList($cluster_addresses)
+      ->containsAddress($address);
+  }
 
 /* -(  Internals  )---------------------------------------------------------- */
 

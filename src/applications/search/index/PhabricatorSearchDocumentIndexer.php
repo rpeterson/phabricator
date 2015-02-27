@@ -1,9 +1,17 @@
 <?php
 
-/**
- * @group search
- */
-abstract class PhabricatorSearchDocumentIndexer {
+abstract class PhabricatorSearchDocumentIndexer extends Phobject {
+
+  private $context;
+
+  protected function setContext($context) {
+    $this->context = $context;
+    return $this;
+  }
+
+  protected function getContext() {
+    return $this->context;
+  }
 
   abstract public function getIndexableObject();
   abstract protected function buildAbstractDocumentByPHID($phid);
@@ -33,9 +41,15 @@ abstract class PhabricatorSearchDocumentIndexer {
     return $object;
   }
 
-  public function indexDocumentByPHID($phid) {
+  public function indexDocumentByPHID($phid, $context) {
     try {
+      $this->setContext($context);
+
       $document = $this->buildAbstractDocumentByPHID($phid);
+      if ($document === null) {
+        // This indexer doesn't build a document index, so we're done.
+        return $this;
+      }
 
       $object = $this->loadDocumentByPHID($phid);
 
@@ -48,6 +62,11 @@ abstract class PhabricatorSearchDocumentIndexer {
       // Automatically rebuild subscriber indexes if the object is subscribable.
       if ($object instanceof PhabricatorSubscribableInterface) {
         $this->indexSubscribers($document);
+      }
+
+      // Automatically build project relationships
+      if ($object instanceof PhabricatorProjectInterface) {
+        $this->indexProjects($document, $object);
       }
 
       $engine = PhabricatorSearchEngineSelector::newSelector()->newEngine();
@@ -96,6 +115,24 @@ abstract class PhabricatorSearchDocumentIndexer {
     }
   }
 
+  protected function indexProjects(
+    PhabricatorSearchAbstractDocument $doc,
+    PhabricatorProjectInterface $object) {
+
+    $project_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
+      $object->getPHID(),
+      PhabricatorProjectObjectHasProjectEdgeType::EDGECONST);
+    if ($project_phids) {
+      foreach ($project_phids as $project_phid) {
+        $doc->addRelationship(
+          PhabricatorSearchRelationship::RELATIONSHIP_PROJECT,
+          $project_phid,
+          PhabricatorProjectProjectPHIDType::TYPECONST,
+          $doc->getDocumentModified()); // Bogus timestamp.
+      }
+    }
+  }
+
   protected function indexTransactions(
     PhabricatorSearchAbstractDocument $doc,
     PhabricatorApplicationTransactionQuery $query,
@@ -104,7 +141,6 @@ abstract class PhabricatorSearchDocumentIndexer {
     $xactions = id(clone $query)
       ->setViewer($this->getViewer())
       ->withObjectPHIDs($phids)
-      ->withTransactionTypes(array(PhabricatorTransactions::TYPE_COMMENT))
       ->execute();
 
     foreach ($xactions as $xaction) {

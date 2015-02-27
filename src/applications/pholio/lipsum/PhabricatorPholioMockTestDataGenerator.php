@@ -1,17 +1,14 @@
 <?php
 
-/**
- * @group pholio
- */
 final class PhabricatorPholioMockTestDataGenerator
   extends PhabricatorTestDataGenerator {
 
   public function generate() {
-    $authorPHID = $this->loadPhabrictorUserPHID();
+    $author_phid = $this->loadPhabrictorUserPHID();
     $author = id(new PhabricatorUser())
-          ->loadOneWhere('phid = %s', $authorPHID);
+          ->loadOneWhere('phid = %s', $author_phid);
     $mock = id(new PholioMock())
-      ->setAuthorPHID($authorPHID);
+      ->setAuthorPHID($author_phid);
     $content_source = PhabricatorContentSource::newForSource(
       PhabricatorContentSource::SOURCE_UNKNOWN,
       array());
@@ -30,10 +27,10 @@ final class PhabricatorPholioMockTestDataGenerator
       array('=' => $this->getCCPHIDs());
 
     // Get Files and make Images
-    $filePHIDS = $this->generateImages();
+    $file_phids = $this->generateImages();
     $files = id(new PhabricatorFileQuery())
       ->setViewer($author)
-      ->withPHIDs($filePHIDS)
+      ->withPHIDs($file_phids)
       ->execute();
     $mock->setCoverPHID(head($files)->getPHID());
     $sequence = 0;
@@ -88,8 +85,8 @@ final class PhabricatorPholioMockTestDataGenerator
   }
 
   public function generateImages() {
-    $images = newv("PhabricatorFile", array())
-      ->loadAllWhere("mimeType = %s", "image/jpeg");
+    $images = newv('PhabricatorFile', array())
+      ->loadAllWhere('mimeType = %s', 'image/jpeg');
     $rand_images = array();
     $quantity = rand(2, 10);
     $quantity = min($quantity, count($images));
@@ -106,6 +103,5 @@ final class PhabricatorPholioMockTestDataGenerator
     }
     return $rand_images;
   }
-
 
 }

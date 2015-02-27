@@ -1,28 +1,31 @@
 <?php
 
-/**
- * @group phriction
- */
-final class PhrictionDiffController
-  extends PhrictionController {
+final class PhrictionDiffController extends PhrictionController {
 
   private $id;
+
+  public function shouldAllowPublic() {
+    return true;
+  }
 
   public function willProcessRequest(array $data) {
     $this->id = $data['id'];
   }
 
   public function processRequest() {
-
     $request = $this->getRequest();
     $user = $request->getUser();
 
-    $document = id(new PhrictionDocument())->load($this->id);
+    $document = id(new PhrictionDocumentQuery())
+      ->setViewer($user)
+      ->withIDs(array($this->id))
+      ->needContent(true)
+      ->executeOne();
     if (!$document) {
       return new Aphront404Response();
     }
 
-    $current = id(new PhrictionContent())->load($document->getContentID());
+    $current = $document->getContent();
 
     $l = $request->getInt('l');
     $r = $request->getInt('r');
@@ -68,6 +71,7 @@ final class PhrictionDiffController
     $whitespace_mode = DifferentialChangesetParser::WHITESPACE_SHOW_ALL;
 
     $parser = new DifferentialChangesetParser();
+    $parser->setUser($user);
     $parser->setChangeset($changeset);
     $parser->setRenderingReference("{$l},{$r}");
     $parser->setWhitespaceMode($whitespace_mode);
@@ -111,7 +115,7 @@ final class PhrictionDiffController
       pht('History'),
       PhrictionDocument::getSlugURI($slug, 'history'));
 
-    $title = pht("Version %s vs %s", $l, $r);
+    $title = pht('Version %s vs %s', $l, $r);
 
     $header = id(new PHUIHeaderView())
       ->setHeader($title);
@@ -180,7 +184,7 @@ final class PhrictionDiffController
 
 
     $output = hsprintf(
-      '<br><div class="phriction-document-history-diff">'.
+      '<div class="phriction-document-history-diff">'.
         '%s%s'.
         '<table class="phriction-revert-table">'.
           '<tr><td>%s</td><td>%s</td>'.
@@ -205,7 +209,6 @@ final class PhrictionDiffController
       ),
       array(
         'title'     => pht('Document History'),
-        'device'    => true,
       ));
 
   }

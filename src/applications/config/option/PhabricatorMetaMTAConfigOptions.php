@@ -4,11 +4,19 @@ final class PhabricatorMetaMTAConfigOptions
   extends PhabricatorApplicationConfigOptions {
 
   public function getName() {
-    return pht("Mail");
+    return pht('Mail');
   }
 
   public function getDescription() {
-    return pht("Configure Mail.");
+    return pht('Configure Mail.');
+  }
+
+  public function getFontIcon() {
+    return 'fa-send';
+  }
+
+  public function getGroup() {
+    return 'core';
   }
 
   public function getOptions() {
@@ -97,6 +105,12 @@ This may improve the behavior of some auto-responder software and prevent it
 from replying. However, it may also cause deliverability issues -- notably, you
 currently can not send this header via Amazon SES, and enabling this option with
 SES will prevent delivery of any affected mail.
+EODOC
+));
+
+    $email_preferences_description = $this->deformat(pht(<<<EODOC
+You can disable the email preference link in emails if users prefer smaller
+emails.
 EODOC
 ));
 
@@ -207,8 +221,8 @@ EODOC
         true)
         ->setBoolOptions(
           array(
-            pht("Send Mail To Each Recipient"),
-            pht("Send Mail To All Recipients"),
+            pht('Send Mail To Each Recipient'),
+            pht('Send Mail To All Recipients'),
           ))
         ->setSummary(
           pht(
@@ -219,8 +233,8 @@ EODOC
       $this->newOption('metamta.can-send-as-user', 'bool', false)
         ->setBoolOptions(
           array(
-            pht("Send as User Taking Action"),
-            pht("Send as Phabricator"),
+            pht('Send as User Taking Action'),
+            pht('Send as Phabricator'),
           ))
         ->setSummary(
           pht(
@@ -229,34 +243,44 @@ EODOC
       $this->newOption(
         'metamta.reply-handler-domain',
         'string',
-        'phabricator.example.com')
+        null)
+        ->setLocked(true)
         ->setDescription(pht(
           'Domain used for reply email addresses. Some applications can '.
-          'configure this domain.')),
+          'override this configuration with a different domain.'))
+        ->addExample('phabricator.example.com', ''),
       $this->newOption('metamta.reply.show-hints', 'bool', true)
         ->setBoolOptions(
           array(
-            pht("Show Reply Handler Hints"),
-            pht("No Reply Handler Hints"),
+            pht('Show Reply Handler Hints'),
+            pht('No Reply Handler Hints'),
           ))
         ->setSummary(pht('Show hints about reply handler actions in email.'))
         ->setDescription($reply_hints_description),
       $this->newOption('metamta.herald.show-hints', 'bool', true)
         ->setBoolOptions(
           array(
-            pht("Show Herald Hints"),
-            pht("No Herald Hints"),
+            pht('Show Herald Hints'),
+            pht('No Herald Hints'),
           ))
         ->setSummary(pht('Show hints about Herald rules in email.'))
         ->setDescription($herald_hints_description),
       $this->newOption('metamta.recipients.show-hints', 'bool', true)
         ->setBoolOptions(
           array(
-            pht("Show Recipient Hints"),
-            pht("No Recipient Hints"),
+            pht('Show Recipient Hints'),
+            pht('No Recipient Hints'),
           ))
         ->setSummary(pht('Show "To:" and "Cc:" footer hints in email.'))
         ->setDescription($recipient_hints_description),
+      $this->newOption('metamta.email-preferences', 'bool', true)
+        ->setBoolOptions(
+          array(
+            pht('Show Email Preferences Link'),
+            pht('No Email Preferences Link'),
+          ))
+        ->setSummary(pht('Show email preferences link in email.'))
+        ->setDescription($email_preferences_description),
       $this->newOption('metamta.precedence-bulk', 'bool', false)
         ->setBoolOptions(
           array(
@@ -331,7 +355,7 @@ EODOC
             'in bytes.'))
         ->setSummary(pht('Global cap for size of generated emails (bytes).'))
         ->addExample(524288, pht('Truncate at 512KB'))
-        ->addExample(1048576, pht('Truncate at 1MB'))
+        ->addExample(1048576, pht('Truncate at 1MB')),
     );
   }
 

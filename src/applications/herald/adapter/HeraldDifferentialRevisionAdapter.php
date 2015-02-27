@@ -1,9 +1,9 @@
 <?php
 
-final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
+final class HeraldDifferentialRevisionAdapter
+  extends HeraldDifferentialAdapter {
 
   protected $revision;
-  protected $diff;
 
   protected $explicitCCs;
   protected $explicitReviewers;
@@ -15,13 +15,14 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
   protected $addReviewerPHIDs = array();
   protected $blockingReviewerPHIDs = array();
   protected $buildPlans = array();
+  protected $requiredSignatureDocumentPHIDs = array();
 
-  protected $repository;
   protected $affectedPackages;
   protected $changesets;
+  private $haveHunks;
 
   public function getAdapterApplicationClass() {
-    return 'PhabricatorApplicationDifferential';
+    return 'PhabricatorDifferentialApplication';
   }
 
   public function getObject() {
@@ -142,6 +143,10 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return $this->blockingReviewerPHIDs;
   }
 
+  public function getRequiredSignatureDocumentPHIDs() {
+    return $this->requiredSignatureDocumentPHIDs;
+  }
+
   public function getBuildPlans() {
     return $this->buildPlans;
   }
@@ -154,43 +159,6 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return $this->revision->getTitle();
   }
 
-  public function loadRepository() {
-    if ($this->repository === null) {
-      $this->repository = false;
-
-      $viewer = PhabricatorUser::getOmnipotentUser();
-      $repository_phid = null;
-
-      $revision = $this->revision;
-      if ($revision->getRepositoryPHID()) {
-        $repository_phid = $revision->getRepositoryPHID();
-      } else {
-        $repository = id(new DifferentialRepositoryLookup())
-          ->setViewer($viewer)
-          ->setDiff($this->diff)
-          ->lookupRepository();
-        if ($repository) {
-          // We want to get the projects for this repository too, so run a
-          // full query for it below.
-          $repository_phid = $repository->getPHID();
-        }
-      }
-
-      if ($repository_phid) {
-        $repository = id(new PhabricatorRepositoryQuery())
-          ->setViewer($viewer)
-          ->withPHIDs(array($repository_phid))
-          ->needProjectPHIDs(true)
-          ->executeOne();
-        if ($repository) {
-          $this->repository = $repository;
-        }
-      }
-    }
-
-    return $this->repository;
-  }
-
   protected function loadChangesets() {
     if ($this->changesets === null) {
       $this->changesets = $this->diff->loadChangesets();
@@ -198,102 +166,20 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return $this->changesets;
   }
 
-  protected function loadAffectedPaths() {
+  protected function loadChangesetsWithHunks() {
     $changesets = $this->loadChangesets();
 
-    $paths = array();
-    foreach ($changesets as $changeset) {
-      $paths[] = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-    }
-    return $paths;
-  }
+    if ($changesets && !$this->haveHunks) {
+      $this->haveHunks = true;
 
-  protected function getAbsoluteRepositoryPathForChangeset(
-    DifferentialChangeset $changeset) {
-
-    $repository = $this->loadRepository();
-    if (!$repository) {
-      return '/'.ltrim($changeset->getFilename(), '/');
+      id(new DifferentialHunkQuery())
+        ->setViewer(PhabricatorUser::getOmnipotentUser())
+        ->withChangesets($changesets)
+        ->needAttachToChangesets(true)
+        ->execute();
     }
 
-    $diff = $this->diff;
-
-    return $changeset->getAbsoluteRepositoryPath($repository, $diff);
-  }
-
-  protected function loadContentDictionary() {
-    $changesets = $this->loadChangesets();
-
-    $hunks = array();
-    if ($changesets) {
-      $hunks = id(new DifferentialHunk())->loadAllWhere(
-        'changesetID in (%Ld)',
-        mpull($changesets, 'getID'));
-    }
-
-    $dict = array();
-    $hunks = mgroup($hunks, 'getChangesetID');
-    $changesets = mpull($changesets, null, 'getID');
-    foreach ($changesets as $id => $changeset) {
-      $path = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-      $content = array();
-      foreach (idx($hunks, $id, array()) as $hunk) {
-        $content[] = $hunk->makeChanges();
-      }
-      $dict[$path] = implode("\n", $content);
-    }
-
-    return $dict;
-  }
-
-  protected function loadAddedContentDictionary() {
-    $changesets = $this->loadChangesets();
-
-    $hunks = array();
-    if ($changesets) {
-      $hunks = id(new DifferentialHunk())->loadAllWhere(
-        'changesetID in (%Ld)',
-        mpull($changesets, 'getID'));
-    }
-
-    $dict = array();
-    $hunks = mgroup($hunks, 'getChangesetID');
-    $changesets = mpull($changesets, null, 'getID');
-    foreach ($changesets as $id => $changeset) {
-      $path = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-      $content = array();
-      foreach (idx($hunks, $id, array()) as $hunk) {
-        $content[] = implode('', $hunk->getAddedLines());
-      }
-      $dict[$path] = implode("\n", $content);
-    }
-
-    return $dict;
-  }
-
-  protected function loadRemovedContentDictionary() {
-    $changesets = $this->loadChangesets();
-
-    $hunks = array();
-    if ($changesets) {
-      $hunks = id(new DifferentialHunk())->loadAllWhere(
-        'changesetID in (%Ld)',
-        mpull($changesets, 'getID'));
-    }
-
-    $dict = array();
-    $hunks = mgroup($hunks, 'getChangesetID');
-    $changesets = mpull($changesets, null, 'getID');
-    foreach ($changesets as $id => $changeset) {
-      $path = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-      $content = array();
-      foreach (idx($hunks, $id, array()) as $hunk) {
-        $content[] = implode('', $hunk->getRemovedLines());
-      }
-      $dict[$path] = implode("\n", $content);
-    }
-
-    return $dict;
+    return $changesets;
   }
 
   public function loadAffectedPackages() {
@@ -384,25 +270,30 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
   public function getActions($rule_type) {
     switch ($rule_type) {
       case HeraldRuleTypeConfig::RULE_TYPE_GLOBAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_REMOVE_CC,
-          self::ACTION_EMAIL,
-          self::ACTION_ADD_REVIEWERS,
-          self::ACTION_ADD_BLOCKING_REVIEWERS,
-          self::ACTION_APPLY_BUILD_PLANS,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_REMOVE_CC,
+            self::ACTION_EMAIL,
+            self::ACTION_ADD_REVIEWERS,
+            self::ACTION_ADD_BLOCKING_REVIEWERS,
+            self::ACTION_APPLY_BUILD_PLANS,
+            self::ACTION_REQUIRE_SIGNATURE,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
       case HeraldRuleTypeConfig::RULE_TYPE_PERSONAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_REMOVE_CC,
-          self::ACTION_EMAIL,
-          self::ACTION_FLAG,
-          self::ACTION_ADD_REVIEWERS,
-          self::ACTION_ADD_BLOCKING_REVIEWERS,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_REMOVE_CC,
+            self::ACTION_EMAIL,
+            self::ACTION_FLAG,
+            self::ACTION_ADD_REVIEWERS,
+            self::ACTION_ADD_BLOCKING_REVIEWERS,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
     }
   }
 
@@ -519,10 +410,28 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
             true,
             pht('Applied build plans.'));
           break;
+        case self::ACTION_REQUIRE_SIGNATURE:
+          foreach ($effect->getTarget() as $phid) {
+            $this->requiredSignatureDocumentPHIDs[] = $phid;
+          }
+          $result[] = new HeraldApplyTranscript(
+            $effect,
+            true,
+            pht('Required signatures.'));
+          break;
         default:
-          throw new Exception("No rules to handle action '{$action}'.");
+          $custom_result = parent::handleCustomHeraldEffect($effect);
+          if ($custom_result === null) {
+            throw new Exception(pht(
+              "No rules to handle action '%s'.",
+              $action));
+          }
+
+          $result[] = $custom_result;
+          break;
       }
     }
     return $result;
   }
+
 }

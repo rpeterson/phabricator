@@ -4,55 +4,32 @@
  * @task  info  Application Information
  * @task  ui    UI Integration
  * @task  uri   URI Routing
+ * @task  mail  Email integration
  * @task  fact  Fact Integration
  * @task  meta  Application Management
- * @group apps
  */
-abstract class PhabricatorApplication
-  implements PhabricatorPolicyInterface {
+abstract class PhabricatorApplication implements PhabricatorPolicyInterface {
+
+  const MAX_STATUS_ITEMS      = 100;
 
   const GROUP_CORE            = 'core';
-  const GROUP_COMMUNICATION   = 'communication';
-  const GROUP_ORGANIZATION    = 'organization';
   const GROUP_UTILITIES       = 'util';
   const GROUP_ADMIN           = 'admin';
   const GROUP_DEVELOPER       = 'developer';
-  const GROUP_MISC            = 'misc';
-
-  const TILE_INVISIBLE        = 'invisible';
-  const TILE_HIDE             = 'hide';
-  const TILE_SHOW             = 'show';
-  const TILE_FULL             = 'full';
 
   public static function getApplicationGroups() {
     return array(
       self::GROUP_CORE          => pht('Core Applications'),
-      self::GROUP_COMMUNICATION => pht('Communication'),
-      self::GROUP_ORGANIZATION  => pht('Organization'),
       self::GROUP_UTILITIES     => pht('Utilities'),
       self::GROUP_ADMIN         => pht('Administration'),
       self::GROUP_DEVELOPER     => pht('Developer Tools'),
-      self::GROUP_MISC          => pht('Miscellaneous Applications'),
     );
   }
-
-  public static function getTileDisplayName($constant) {
-    $names = array(
-      self::TILE_INVISIBLE => pht('Invisible'),
-      self::TILE_HIDE => pht('Hidden'),
-      self::TILE_SHOW => pht('Show Small Tile'),
-      self::TILE_FULL => pht('Show Large Tile'),
-    );
-    return idx($names, $constant);
-  }
-
 
 
 /* -(  Application Information  )-------------------------------------------- */
 
-  public function getName() {
-    return substr(get_class($this), strlen('PhabricatorApplication'));
-  }
+  public abstract function getName();
 
   public function getShortDescription() {
     return $this->getName().' Application';
@@ -63,8 +40,8 @@ abstract class PhabricatorApplication
       return true;
     }
 
-    $beta = PhabricatorEnv::getEnvConfig('phabricator.show-beta-applications');
-    if (!$beta && $this->isBeta()) {
+    $prototypes = PhabricatorEnv::getEnvConfig('phabricator.show-prototypes');
+    if (!$prototypes && $this->isPrototype()) {
       return false;
     }
 
@@ -74,24 +51,62 @@ abstract class PhabricatorApplication
     return empty($uninstalled[get_class($this)]);
   }
 
-  public static function isClassInstalled($class) {
-    return self::getByClass($class)->isInstalled();
-  }
 
-  public function isBeta() {
+  public function isPrototype() {
     return false;
   }
 
+
   /**
-   * Return true if this application should not appear in application lists in
-   * the UI. Primarily intended for unit test applications or other
+   * Return `true` if this application should never appear in application lists
+   * in the UI. Primarily intended for unit test applications or other
    * pseudo-applications.
+   *
+   * Few applications should be unlisted. For most applications, use
+   * @{method:isLaunchable} to hide them from main launch views instead.
    *
    * @return bool True to remove application from UI lists.
    */
   public function isUnlisted() {
     return false;
   }
+
+
+  /**
+   * Return `true` if this application is a normal application with a base
+   * URI and a web interface.
+   *
+   * Launchable applications can be pinned to the home page, and show up in the
+   * "Launcher" view of the Applications application. Making an application
+   * unlauncahble prevents pinning and hides it from this view.
+   *
+   * Usually, an application should be marked unlaunchable if:
+   *
+   *   - it is available on every page anyway (like search); or
+   *   - it does not have a web interface (like subscriptions); or
+   *   - it is still pre-release and being intentionally buried.
+   *
+   * To hide applications more completely, use @{method:isUnlisted}.
+   *
+   * @return bool True if the application is launchable.
+   */
+  public function isLaunchable() {
+    return true;
+  }
+
+
+  /**
+   * Return `true` if this application should be pinned by default.
+   *
+   * Users who have not yet set preferences see a default list of applications.
+   *
+   * @param PhabricatorUser User viewing the pinned application list.
+   * @return bool True if this application should be pinned by default.
+   */
+  public function isPinnedByDefault(PhabricatorUser $viewer) {
+    return false;
+  }
+
 
   /**
    * Returns true if an application is first-party (developed by Phacility)
@@ -123,7 +138,7 @@ abstract class PhabricatorApplication
   }
 
   public function getTypeaheadURI() {
-    return $this->getBaseURI();
+    return $this->isLaunchable() ? $this->getBaseURI() : null;
   }
 
   public function getBaseURI() {
@@ -138,12 +153,8 @@ abstract class PhabricatorApplication
     return null;
   }
 
-  public function getIconName() {
-    return 'application';
-  }
-
-  public function shouldAppearInLaunchView() {
-    return true;
+  public function getFontIcon() {
+    return 'fa-puzzle-piece';
   }
 
   public function getApplicationOrder() {
@@ -151,7 +162,7 @@ abstract class PhabricatorApplication
   }
 
   public function getApplicationGroup() {
-    return self::GROUP_MISC;
+    return self::GROUP_CORE;
   }
 
   public function getTitleGlyph() {
@@ -159,36 +170,15 @@ abstract class PhabricatorApplication
   }
 
   public function getHelpURI() {
-    // TODO: When these applications get created, link to their docs:
-    //
-    //  - Drydock
-    //  - OAuth Server
+    return null;
+  }
 
-
+  public function getOverview() {
     return null;
   }
 
   public function getEventListeners() {
     return array();
-  }
-
-  public function getDefaultTileDisplay(PhabricatorUser $user) {
-    switch ($this->getApplicationGroup()) {
-      case self::GROUP_CORE:
-        return self::TILE_FULL;
-      case self::GROUP_UTILITIES:
-      case self::GROUP_DEVELOPER:
-        return self::TILE_HIDE;
-      case self::GROUP_ADMIN:
-        if ($user->getIsAdmin()) {
-          return self::TILE_SHOW;
-        } else {
-          return self::TILE_INVISIBLE;
-        }
-        break;
-      default:
-        return self::TILE_SHOW;
-    }
   }
 
   public function getRemarkupRules() {
@@ -201,6 +191,22 @@ abstract class PhabricatorApplication
 
   public function getRoutes() {
     return array();
+  }
+
+
+/* -(  Email Integration  )-------------------------------------------------- */
+
+
+  public function supportsEmailIntegration() {
+    return false;
+  }
+
+  protected function getInboundEmailSupportLink() {
+    return PhabricatorEnv::getDocLink('Configuring Inbound Email');
+  }
+
+  public function getAppEmailBlurb() {
+    throw new Exception('Not Implemented.');
   }
 
 
@@ -226,6 +232,22 @@ abstract class PhabricatorApplication
    */
   public function loadStatus(PhabricatorUser $user) {
     return array();
+  }
+
+  /**
+   * @return string
+   * @task ui
+   */
+  public static function formatStatusCount(
+    $count,
+    $limit_string = '%s',
+    $base_string = '%d') {
+    if ($count == self::MAX_STATUS_ITEMS) {
+      $count_str = pht($limit_string, ($count - 1).'+');
+    } else {
+      $count_str = pht($base_string, $count);
+    }
+    return $count_str;
   }
 
 
@@ -288,6 +310,7 @@ abstract class PhabricatorApplication
 
 /* -(  Application Management  )--------------------------------------------- */
 
+
   public static function getByClass($class_name) {
     $selected = null;
     $applications = PhabricatorApplication::getAllApplications();
@@ -345,6 +368,48 @@ abstract class PhabricatorApplication
   }
 
 
+  /**
+   * Determine if an application is installed, by application class name.
+   *
+   * To check if an application is installed //and// available to a particular
+   * viewer, user @{method:isClassInstalledForViewer}.
+   *
+   * @param string  Application class name.
+   * @return bool   True if the class is installed.
+   * @task meta
+   */
+  public static function isClassInstalled($class) {
+    return self::getByClass($class)->isInstalled();
+  }
+
+
+  /**
+   * Determine if an application is installed and available to a viewer, by
+   * application class name.
+   *
+   * To check if an application is installed at all, use
+   * @{method:isClassInstalled}.
+   *
+   * @param string Application class name.
+   * @param PhabricatorUser Viewing user.
+   * @return bool True if the class is installed for the viewer.
+   * @task meta
+   */
+  public static function isClassInstalledForViewer(
+    $class,
+    PhabricatorUser $viewer) {
+
+    if (!self::isClassInstalled($class)) {
+      return false;
+    }
+
+    return PhabricatorPolicyFilter::hasCapability(
+      $viewer,
+      self::getByClass($class),
+      PhabricatorPolicyCapability::CAN_VIEW);
+  }
+
+
 /* -(  PhabricatorPolicyInterface  )----------------------------------------- */
 
 
@@ -392,6 +457,11 @@ abstract class PhabricatorApplication
   private function getCustomPolicySetting($capability) {
     if (!$this->isCapabilityEditable($capability)) {
       return null;
+    }
+
+    $policy_locked = PhabricatorEnv::getEnvConfig('policy.locked');
+    if (isset($policy_locked[$capability])) {
+      return $policy_locked[$capability];
     }
 
     $config = PhabricatorEnv::getEnvConfig('phabricator.application-settings');

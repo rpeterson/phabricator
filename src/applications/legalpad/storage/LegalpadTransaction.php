@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group legalpad
- */
 final class LegalpadTransaction extends PhabricatorApplicationTransaction {
 
   public function getApplicationName() {
@@ -10,7 +7,7 @@ final class LegalpadTransaction extends PhabricatorApplicationTransaction {
   }
 
   public function getApplicationTransactionType() {
-    return PhabricatorLegalpadPHIDTypeDocument::TYPECONST;
+    return PhabricatorLegalpadDocumentPHIDType::TYPECONST;
   }
 
   public function getApplicationTransactionCommentObject() {
@@ -28,6 +25,8 @@ final class LegalpadTransaction extends PhabricatorApplicationTransaction {
       case LegalpadTransactionType::TYPE_TITLE:
       case LegalpadTransactionType::TYPE_TEXT:
         return ($old === null);
+      case LegalpadTransactionType::TYPE_SIGNATURE_TYPE:
+        return true;
     }
 
     return parent::shouldHide();
@@ -47,12 +46,25 @@ final class LegalpadTransaction extends PhabricatorApplicationTransaction {
           $this->renderHandleLink($author_phid),
           $old,
           $new);
-        break;
       case LegalpadTransactionType::TYPE_TEXT:
         return pht(
           "%s updated the document's text.",
           $this->renderHandleLink($author_phid));
-        break;
+      case LegalpadTransactionType::TYPE_PREAMBLE:
+        return pht(
+          '%s updated the preamble.',
+          $this->renderHandleLink($author_phid));
+      case LegalpadTransactionType::TYPE_REQUIRE_SIGNATURE:
+        if ($new) {
+          $text = pht(
+            '%s set the document to require signatures.',
+            $this->renderHandleLink($author_phid));
+        } else {
+          $text = pht(
+            '%s set the document to not require signatures.',
+            $this->renderHandleLink($author_phid));
+        }
+        return $text;
     }
 
     return parent::getTitle();
@@ -62,6 +74,7 @@ final class LegalpadTransaction extends PhabricatorApplicationTransaction {
     switch ($this->getTransactionType()) {
       case LegalpadTransactionType::TYPE_TITLE:
       case LegalpadTransactionType::TYPE_TEXT:
+      case LegalpadTransactionType::TYPE_PREAMBLE:
         return true;
     }
     return parent::hasChangeDetails();

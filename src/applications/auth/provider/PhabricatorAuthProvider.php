@@ -16,7 +16,7 @@ abstract class PhabricatorAuthProvider {
   public function getProviderConfig() {
     if ($this->providerConfig === null) {
       throw new Exception(
-        "Call attachProviderConfig() before getProviderConfig()!");
+        'Call attachProviderConfig() before getProviderConfig()!');
     }
     return $this->providerConfig;
   }
@@ -93,8 +93,7 @@ abstract class PhabricatorAuthProvider {
           throw new Exception(
             pht(
               "Two authentication providers use the same provider key ".
-              "('%s'). Each provider must be identified by a unique ".
-              "key.",
+              "('%s'). Each provider must be identified by a unique key.",
               $key));
         }
         $providers[$key] = $object;
@@ -141,16 +140,32 @@ abstract class PhabricatorAuthProvider {
     return $this->getProviderConfig()->getShouldAllowUnlink();
   }
 
-  public function buildLoginForm(
-    PhabricatorAuthStartController $controller) {
+  public function shouldTrustEmails() {
+    return $this->shouldAllowEmailTrustConfiguration() &&
+           $this->getProviderConfig()->getShouldTrustEmails();
+  }
+
+  /**
+   * Should we allow the adapter to be marked as "trusted". This is true for
+   * all adapters except those that allow the user to type in emails (see
+   * @{class:PhabricatorPasswordAuthProvider}).
+   */
+  public function shouldAllowEmailTrustConfiguration() {
+    return true;
+  }
+
+  public function buildLoginForm(PhabricatorAuthStartController $controller) {
     return $this->renderLoginForm($controller->getRequest(), $mode = 'start');
+  }
+
+  public function buildInviteForm(PhabricatorAuthStartController $controller) {
+    return $this->renderLoginForm($controller->getRequest(), $mode = 'invite');
   }
 
   abstract public function processLoginRequest(
     PhabricatorAuthLoginController $controller);
 
-  public function buildLinkForm(
-    PhabricatorAuthLinkController $controller) {
+  public function buildLinkForm(PhabricatorAuthLinkController $controller) {
     return $this->renderLoginForm($controller->getRequest(), $mode = 'link');
   }
 
@@ -163,10 +178,8 @@ abstract class PhabricatorAuthProvider {
     return $this->renderLoginForm($controller->getRequest(), $mode = 'refresh');
   }
 
-  protected function renderLoginForm(
-    AphrontRequest $request,
-    $mode) {
-    throw new Exception("Not implemented!");
+  protected function renderLoginForm(AphrontRequest $request, $mode) {
+    throw new PhutilMethodNotImplementedException();
   }
 
   public function createProviders() {
@@ -183,8 +196,7 @@ abstract class PhabricatorAuthProvider {
 
   protected function loadOrCreateAccount($account_id) {
     if (!strlen($account_id)) {
-      throw new Exception(
-        "loadOrCreateAccount(...): empty account ID!");
+      throw new Exception('loadOrCreateAccount(...): empty account ID!');
     }
 
     $adapter = $this->getAdapter();
@@ -235,6 +247,7 @@ abstract class PhabricatorAuthProvider {
             $image_uri,
             array(
               'name' => $name,
+              'canCDN' => true,
             ));
         unset($unguarded);
 
@@ -251,14 +264,14 @@ abstract class PhabricatorAuthProvider {
     $this->willSaveAccount($account);
 
     $unguarded = AphrontWriteGuard::beginScopedUnguardedWrites();
-      $account->save();
+    $account->save();
     unset($unguarded);
 
     return $account;
   }
 
   public function getLoginURI() {
-    $app = PhabricatorApplication::getByClass('PhabricatorApplicationAuth');
+    $app = PhabricatorApplication::getByClass('PhabricatorAuthApplication');
     return $app->getApplicationURI('/login/'.$this->getProviderKey().'/');
   }
 
@@ -267,7 +280,7 @@ abstract class PhabricatorAuthProvider {
   }
 
   public function getStartURI() {
-    $app = PhabricatorApplication::getByClass('PhabricatorApplicationAuth');
+    $app = PhabricatorApplication::getByClass('PhabricatorAuthApplication');
     $uri = $app->getApplicationURI('/start/');
     return $uri;
   }
@@ -281,7 +294,7 @@ abstract class PhabricatorAuthProvider {
   }
 
   public function getDefaultExternalAccount() {
-    throw new Exception("Not implemented!");
+    throw new PhutilMethodNotImplementedException();
   }
 
   public function getLoginOrder() {
@@ -325,6 +338,7 @@ abstract class PhabricatorAuthProvider {
     AphrontFormView $form,
     array $values,
     array $issues) {
+
     return;
   }
 
@@ -346,7 +360,6 @@ abstract class PhabricatorAuthProvider {
         $account_view));
   }
 
-
   /**
    * Return true to use a two-step configuration (setup, configure) instead of
    * the default single-step configuration. In practice, this means that
@@ -358,7 +371,6 @@ abstract class PhabricatorAuthProvider {
   public function hasSetupStep() {
     return false;
   }
-
 
   /**
    * Render a standard login/register button element.
@@ -393,6 +405,8 @@ abstract class PhabricatorAuthProvider {
       $button_text = pht('Link External Account');
     } else if ($mode == 'refresh') {
       $button_text = pht('Refresh Account Link');
+    } else if ($mode == 'invite') {
+      $button_text = pht('Register Account');
     } else if ($this->shouldAllowRegistration()) {
       $button_text = pht('Login or Register');
     } else {
@@ -441,7 +455,7 @@ abstract class PhabricatorAuthProvider {
     return null;
   }
 
-  protected function getAuthCSRFCode(AphrontRequest $request) {
+  public function getAuthCSRFCode(AphrontRequest $request) {
     $phcid = $request->getCookie(PhabricatorCookies::COOKIE_CLIENTID);
     if (!strlen($phcid)) {
       throw new Exception(

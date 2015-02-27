@@ -3,7 +3,7 @@
 final class PhabricatorRepositoryManagementMirrorWorkflow
   extends PhabricatorRepositoryManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('mirror')
       ->setExamples('**mirror** [__options__] __repository__ ...')
@@ -28,8 +28,8 @@ final class PhabricatorRepositoryManagementMirrorWorkflow
     if (!$repos) {
       throw new PhutilArgumentUsageException(
         pht(
-          "Specify one or more repositories to push to mirrors, by ".
-          "callsign."));
+          'Specify one or more repositories to push to mirrors, by '.
+          'callsign.'));
     }
 
     $console = PhutilConsole::getConsole();

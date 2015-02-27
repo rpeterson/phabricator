@@ -14,10 +14,16 @@ final class PhabricatorPolicyDataTestCase extends PhabricatorTestCase {
     $proj_a = id(new PhabricatorProject())
       ->setName('A')
       ->setAuthorPHID($author->getPHID())
+      ->setIcon(PhabricatorProject::DEFAULT_ICON)
+      ->setColor(PhabricatorProject::DEFAULT_COLOR)
+      ->setIsMembershipLocked(0)
       ->save();
     $proj_b = id(new PhabricatorProject())
       ->setName('B')
       ->setAuthorPHID($author->getPHID())
+      ->setIcon(PhabricatorProject::DEFAULT_ICON)
+      ->setColor(PhabricatorProject::DEFAULT_COLOR)
+      ->setIsMembershipLocked(0)
       ->save();
 
     $proj_a->setViewPolicy($proj_b->getPHID())->save();
@@ -42,7 +48,7 @@ final class PhabricatorPolicyDataTestCase extends PhabricatorTestCase {
         array(
           array(
             'action' => PhabricatorPolicy::ACTION_ALLOW,
-            'rule' => 'PhabricatorPolicyRuleUsers',
+            'rule' => 'PhabricatorUsersPolicyRule',
             'value' => array($user_a->getPHID()),
           ),
         ))
@@ -78,7 +84,7 @@ final class PhabricatorPolicyDataTestCase extends PhabricatorTestCase {
         array(
           array(
             'action' => PhabricatorPolicy::ACTION_ALLOW,
-            'rule' => 'PhabricatorPolicyRuleAdministrators',
+            'rule' => 'PhabricatorAdministratorsPolicyRule',
             'value' => null,
           ),
         ))
@@ -112,7 +118,7 @@ final class PhabricatorPolicyDataTestCase extends PhabricatorTestCase {
         array(
           array(
             'action' => PhabricatorPolicy::ACTION_ALLOW,
-            'rule' => 'PhabricatorPolicyRuleLunarPhase',
+            'rule' => 'PhabricatorLunarPhasePolicyRule',
             'value' => 'new',
           ),
         ))

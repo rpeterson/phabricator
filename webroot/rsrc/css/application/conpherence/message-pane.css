@@ -7,7 +7,7 @@
 .loading .messages-loading-icon,
 .conpherence-layout .conpherence-no-threads {
   position: fixed;
-  left: 280px;
+  left: 240px;
   right: 241px;
   top: 76px;
   bottom: 0px;
@@ -32,6 +32,11 @@
   margin: 16px 0px 16px 0px;
 }
 
+.conpherence-layout .phui-crumbs-view {
+  padding: 0 0 0 8px;
+  background: #EBECEE;
+}
+
 .conpherence-show-older-messages {
   display: block;
   background: #e0e3ec;
@@ -47,12 +52,11 @@
 
 .conpherence-message-pane .conpherence-messages {
   position: fixed;
-  left: 280px;
+  left: 240px;
   right: 241px;
   top: 76px;
-  bottom: 190px;
+  bottom: 185px;
   overflow-y: auto;
-  box-shadow: inset 1px 4px 5px rgba(0,0,0,0.1);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -77,11 +81,11 @@
 .conpherence-message-pane .phui-form-view {
   border-width: 0;
   background-color: {$lightgreybackground};
-  height: 190px;
+  height: 185px;
   padding: 0;
   position: fixed;
   bottom: 0;
-  left: 280px;
+  left: 240px;
   right: 241px;
 }
 
@@ -105,7 +109,7 @@
   left: 0;
   right: 0;
   background-color: #d8dce2;
-  height: 3em;
+  height: 38px;
   width: 100%;
 }
 
@@ -116,7 +120,7 @@
 }
 
 .conpherence-message-pane .phabricator-transaction-view {
-  margin: 5px 15px;
+  margin: 4px 12px;
   background-size: 35px;
   min-height: auto;
 }
@@ -132,7 +136,7 @@
 
 .conpherence-message-pane .date-marker {
   border-top: 1px solid #d7d7d7;
-  margin: 5px 15px;
+  margin: 12px 12px 4px;
   min-height: auto;
 }
 .device-phone .conpherence-message-pane .date-marker {
@@ -140,11 +144,11 @@
 }
 .conpherence-message-pane .date-marker .date {
   position: relative;
-  top: -8px;
+  top: -11px;
   left: 40px;
   background-color: #FFF;
-  color: #bfbfbf;
-  font-size: 11px;
+  color: {$bluetext};
+  font-size: 12px;
   padding: 0px 5px;
 }
 .device-phone .conpherence-message-pane .phabricator-transaction-detail {
@@ -162,12 +166,18 @@
 }
 
 .conpherence-message-pane .conpherence-edited .phabricator-transaction-content {
- padding: 0 0 5px 45px;
- font-style: italic;
+  padding: 0 0 4px 45px;
 }
 
-.device-phone .conpherence-message-pane .conpherence-edited .phabricator-transaction-content {
- padding: 0 0 5px 35px;
+.conpherence-message-pane .conpherence-edited
+  .phabricator-transaction-content a {
+  font-weight: bold;
+  color: {$darkbluetext};
+}
+
+.device-phone .conpherence-message-pane .conpherence-edited
+  .phabricator-transaction-content {
+  padding: 0 0 5px 35px;
 }
 
 .conpherence-message-pane .phabricator-transaction-info,
@@ -183,6 +193,10 @@
   padding: 0;
 }
 
+.conpherence-message-pane .phabricator-transaction-header a {
+  color: {$darkbluetext};
+}
+
 .conpherence-message-pane .phabricator-transaction-content {
   padding: 2px 0 8px 0;
 }
@@ -192,11 +206,11 @@
 }
 
 .conpherence-message-pane .aphront-form-control-submit {
-  margin: 3px 8px 0 0;
+  margin: 0 8px 0 0;
 }
 .conpherence-message-pane .remarkup-assist-bar {
   border-width: 1px 0 0;
-  border-color: #CCC;
+  border-color: {$hovergrey};
   border-bottom: transparent;
 }
 
@@ -204,7 +218,7 @@
   height: 124px;
   padding: 6px;
   border-width: 1px 0;
-  border-color: {$lightblueborder};
+  border-color: {$thinblueborder};
   box-sizing: border-box;
   -moz-box-sizing: border-box;
   -webkit-box-sizing: border-box;
@@ -212,10 +226,10 @@
 }
 
 .device .conpherence-message-pane .remarkup-assist-textarea {
-  margin: 0.5em 0em 0em 2%;
-  padding: 6px 1%;
-  width: 98%;
-  height: 2em;
+  margin: 4px 8px;
+  padding: 8px;
+  width: 97%;
+  height: 28px;
   resize: none;
 }
 
@@ -231,9 +245,9 @@
   width: 76%;
 }
 .device-phone .conpherence-message-pane .aphront-form-control-textarea {
-  width: 63%;
+  width: 60%;
 }
 
 .device .conpherence-message-pane .aphront-form-control-submit button {
-  margin: 0.6em 0 0 2%;
+  margin: 7px 0 0 0;
 }

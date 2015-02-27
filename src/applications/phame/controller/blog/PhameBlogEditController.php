@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhameBlogEditController
   extends PhameController {
 
@@ -22,7 +19,7 @@ final class PhameBlogEditController
         ->withIDs(array($this->id))
         ->requireCapabilities(
           array(
-            PhabricatorPolicyCapability::CAN_EDIT
+            PhabricatorPolicyCapability::CAN_EDIT,
           ))
         ->executeOne();
       if (!$blog) {
@@ -66,18 +63,27 @@ final class PhameBlogEditController
       $blog->setDescription($description);
       $blog->setDomain(nonempty($custom_domain, null));
       $blog->setSkin($skin);
-
-      if (!empty($custom_domain)) {
-        $error = $blog->validateCustomDomain($custom_domain);
-        if ($error) {
-          $errors[] = $error;
-          $e_custom_domain = pht('Invalid');
-        }
-      }
-
       $blog->setViewPolicy($request->getStr('can_view'));
       $blog->setEditPolicy($request->getStr('can_edit'));
       $blog->setJoinPolicy($request->getStr('can_join'));
+
+      if (!empty($custom_domain)) {
+        list($error_label, $error_text) =
+          $blog->validateCustomDomain($custom_domain);
+        if ($error_label) {
+          $errors[] = $error_text;
+          $e_custom_domain = $error_label;
+        }
+        if ($blog->getViewPolicy() != PhabricatorPolicies::POLICY_PUBLIC) {
+          $errors[] = pht(
+            'For custom domains to work, the blog must have a view policy of '.
+            'public.');
+          // Prefer earlier labels for the multiple error scenario.
+          if (!$e_custom_domain) {
+            $e_custom_domain = pht('Invalid Policy');
+          }
+        }
+      }
 
       // Don't let users remove their ability to edit blogs.
       PhabricatorPolicyFilter::mustRetainCapability(
@@ -90,7 +96,7 @@ final class PhameBlogEditController
           $blog->save();
           return id(new AphrontRedirectResponse())
             ->setURI($this->getApplicationURI('blog/view/'.$blog->getID().'/'));
-        } catch (AphrontQueryDuplicateKeyException $ex) {
+        } catch (AphrontDuplicateKeyQueryException $ex) {
           $errors[] = pht('Domain must be unique.');
           $e_custom_domain = pht('Not Unique');
         }
@@ -116,12 +122,13 @@ final class PhameBlogEditController
         ->setError($e_name))
       ->appendChild(
         id(new PhabricatorRemarkupControl())
-        ->setLabel(pht('Description'))
-        ->setName('description')
-        ->setValue($blog->getDescription())
-        ->setID('blog-description')
-        ->setUser($user)
-        ->setDisableMacros(true))
+          ->setUser($user)
+          ->setLabel(pht('Description'))
+          ->setName('description')
+          ->setValue($blog->getDescription())
+          ->setID('blog-description')
+          ->setUser($user)
+          ->setDisableMacros(true))
       ->appendChild(
         id(new AphrontFormPolicyControl())
           ->setUser($user)
@@ -182,7 +189,6 @@ final class PhameBlogEditController
       $nav,
       array(
         'title' => $page_title,
-        'device' => true,
       ));
   }
 }

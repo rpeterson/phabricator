@@ -24,14 +24,14 @@ abstract class PhabricatorCalendarController extends PhabricatorController {
     return $this->buildSideNavView()->getMenu();
   }
 
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setName(pht('Create Event'))
         ->setHref($this->getApplicationURI().'event/create')
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }

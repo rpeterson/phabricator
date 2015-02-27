@@ -1,13 +1,10 @@
 <?php
 
-/**
- * @group pholio
- */
 final class PholioReplyHandler extends PhabricatorMailReplyHandler {
 
   public function validateMailReceiver($mail_receiver) {
     if (!($mail_receiver instanceof PholioMock)) {
-      throw new Exception("Mail receiver is not a PholioMock!");
+      throw new Exception('Mail receiver is not a PholioMock!');
     }
   }
 
@@ -21,7 +18,7 @@ final class PholioReplyHandler extends PhabricatorMailReplyHandler {
   }
 
   public function getReplyHandlerDomain() {
-    return PhabricatorEnv::getEnvConfig(
+    return $this->getCustomReplyHandlerDomainIfExists(
       'metamta.pholio.reply-handler-domain');
   }
 
@@ -29,7 +26,7 @@ final class PholioReplyHandler extends PhabricatorMailReplyHandler {
     if ($this->supportsReplies()) {
       // TODO: Implement.
       return null;
-      return "Reply to comment.";
+      return pht('Reply to comment.');
     } else {
       return null;
     }

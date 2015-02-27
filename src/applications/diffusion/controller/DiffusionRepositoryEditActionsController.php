@@ -3,8 +3,7 @@
 final class DiffusionRepositoryEditActionsController
   extends DiffusionRepositoryEditController {
 
-  public function processRequest() {
-    $request = $this->getRequest();
+  protected function processDiffusionRequest(AphrontRequest $request) {
     $viewer = $request->getUser();
     $drequest = $this->diffusionRequest;
     $repository = $drequest->getRepository();
@@ -118,7 +117,6 @@ final class DiffusionRepositoryEditActionsController
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

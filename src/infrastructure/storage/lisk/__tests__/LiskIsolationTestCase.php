@@ -45,11 +45,13 @@ final class LiskIsolationTestCase extends PhabricatorTestCase {
     $dao = new LiskIsolationTestDAO();
 
     try {
-      $dao->establishLiveConnection('r');
+      $method = new ReflectionMethod($dao, 'establishLiveConnection');
+      $method->setAccessible(true);
+      $method->invoke($dao, 'r');
 
       $this->assertFailure(
-        "LiskIsolationTestDAO did not throw an exception when instructed to ".
-        "explicitly connect to an external database.");
+        'LiskIsolationTestDAO did not throw an exception when instructed to '.
+        'explicitly connect to an external database.');
     } catch (LiskIsolationTestDAOException $ex) {
       // Expected, pass.
     }

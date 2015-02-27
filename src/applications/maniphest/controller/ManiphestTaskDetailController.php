@@ -13,7 +13,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
   }
 
   public function processRequest() {
-
     $request = $this->getRequest();
     $user = $request->getUser();
 
@@ -24,6 +23,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
     $task = id(new ManiphestTaskQuery())
       ->setViewer($user)
       ->withIDs(array($this->id))
+      ->needSubscriberPHIDs(true)
       ->executeOne();
     if (!$task) {
       return new Aphront404Response();
@@ -38,12 +38,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
         ->executeOne();
     }
 
-    $transactions = id(new ManiphestTransactionQuery())
-      ->setViewer($user)
-      ->withObjectPHIDs(array($task->getPHID()))
-      ->needComments(true)
-      ->execute();
-
     $field_list = PhabricatorCustomField::getObjectFields(
       $task,
       PhabricatorCustomField::ROLE_VIEW);
@@ -51,11 +45,11 @@ final class ManiphestTaskDetailController extends ManiphestController {
       ->setViewer($user)
       ->readFieldsFromStorage($task);
 
-    $e_commit = PhabricatorEdgeConfig::TYPE_TASK_HAS_COMMIT;
-    $e_dep_on = PhabricatorEdgeConfig::TYPE_TASK_DEPENDS_ON_TASK;
-    $e_dep_by = PhabricatorEdgeConfig::TYPE_TASK_DEPENDED_ON_BY_TASK;
-    $e_rev    = PhabricatorEdgeConfig::TYPE_TASK_HAS_RELATED_DREV;
-    $e_mock   = PhabricatorEdgeConfig::TYPE_TASK_HAS_MOCK;
+    $e_commit = ManiphestTaskHasCommitEdgeType::EDGECONST;
+    $e_dep_on = ManiphestTaskDependsOnTaskEdgeType::EDGECONST;
+    $e_dep_by = ManiphestTaskDependedOnByTaskEdgeType::EDGECONST;
+    $e_rev    = ManiphestTaskHasRevisionEdgeType::EDGECONST;
+    $e_mock   = ManiphestTaskHasMockEdgeType::EDGECONST;
 
     $phid = $task->getPHID();
 
@@ -72,12 +66,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
     $edges = idx($query->execute(), $phid);
     $phids = array_fill_keys($query->getDestinationPHIDs(), true);
 
-    foreach ($task->getCCPHIDs() as $phid) {
-      $phids[$phid] = true;
-    }
-    foreach ($task->getProjectPHIDs() as $phid) {
-      $phids[$phid] = true;
-    }
     if ($task->getOwnerPHID()) {
       $phids[$task->getOwnerPHID()] = true;
     }
@@ -136,40 +124,36 @@ final class ManiphestTaskDetailController extends ManiphestController {
 
     $engine = new PhabricatorMarkupEngine();
     $engine->setViewer($user);
+    $engine->setContextObject($task);
     $engine->addObject($task, ManiphestTask::MARKUP_FIELD_DESCRIPTION);
-    foreach ($transactions as $modern_xaction) {
-      if ($modern_xaction->getComment()) {
-        $engine->addObject(
-          $modern_xaction->getComment(),
-          PhabricatorApplicationTransactionComment::MARKUP_FIELD_COMMENT);
-      }
-    }
 
-    $engine->process();
+    $timeline = $this->buildTransactionTimeline(
+      $task,
+      new ManiphestTransactionQuery(),
+      $engine);
 
     $resolution_types = ManiphestTaskStatus::getTaskStatusMap();
 
     $transaction_types = array(
-      PhabricatorTransactions::TYPE_COMMENT => pht('Comment'),
-      ManiphestTransaction::TYPE_STATUS     => pht('Close Task'),
-      ManiphestTransaction::TYPE_OWNER      => pht('Reassign / Claim'),
-      ManiphestTransaction::TYPE_CCS        => pht('Add CCs'),
-      ManiphestTransaction::TYPE_PRIORITY   => pht('Change Priority'),
-      ManiphestTransaction::TYPE_ATTACH     => pht('Upload File'),
-      ManiphestTransaction::TYPE_PROJECTS   => pht('Associate Projects'),
+      PhabricatorTransactions::TYPE_COMMENT     => pht('Comment'),
+      ManiphestTransaction::TYPE_STATUS         => pht('Change Status'),
+      ManiphestTransaction::TYPE_OWNER          => pht('Reassign / Claim'),
+      PhabricatorTransactions::TYPE_SUBSCRIBERS => pht('Add CCs'),
+      ManiphestTransaction::TYPE_PRIORITY       => pht('Change Priority'),
+      PhabricatorTransactions::TYPE_EDGE        => pht('Associate Projects'),
     );
 
     // Remove actions the user doesn't have permission to take.
 
     $requires = array(
       ManiphestTransaction::TYPE_OWNER =>
-        ManiphestCapabilityEditAssign::CAPABILITY,
+        ManiphestEditAssignCapability::CAPABILITY,
       ManiphestTransaction::TYPE_PRIORITY =>
-        ManiphestCapabilityEditPriority::CAPABILITY,
-      ManiphestTransaction::TYPE_PROJECTS =>
-        ManiphestCapabilityEditProjects::CAPABILITY,
+        ManiphestEditPriorityCapability::CAPABILITY,
+      PhabricatorTransactions::TYPE_EDGE =>
+        ManiphestEditProjectsCapability::CAPABILITY,
       ManiphestTransaction::TYPE_STATUS =>
-        ManiphestCapabilityEditStatus::CAPABILITY,
+        ManiphestEditStatusCapability::CAPABILITY,
     );
 
     foreach ($transaction_types as $type => $name) {
@@ -180,21 +164,14 @@ final class ManiphestTaskDetailController extends ManiphestController {
       }
     }
 
-    if ($task->getStatus() == ManiphestTaskStatus::STATUS_OPEN) {
-      $resolution_types = array_select_keys(
-        $resolution_types,
-        array(
-          ManiphestTaskStatus::STATUS_CLOSED_RESOLVED,
-          ManiphestTaskStatus::STATUS_CLOSED_WONTFIX,
-          ManiphestTaskStatus::STATUS_CLOSED_INVALID,
-          ManiphestTaskStatus::STATUS_CLOSED_SPITE,
-        ));
-    } else {
-      $resolution_types = array(
-        ManiphestTaskStatus::STATUS_OPEN => 'Reopened',
-      );
-      $transaction_types[ManiphestTransaction::TYPE_STATUS] =
-        'Reopen Task';
+    // Don't show an option to change to the current status, or to change to
+    // the duplicate status explicitly.
+    unset($resolution_types[$task->getStatus()]);
+    unset($resolution_types[ManiphestTaskStatus::getDuplicateStatus()]);
+
+    // Don't show owner/priority changes for closed tasks, as they don't make
+    // much sense.
+    if ($task->isClosed()) {
       unset($transaction_types[ManiphestTransaction::TYPE_PRIORITY]);
       unset($transaction_types[ManiphestTransaction::TYPE_OWNER]);
     }
@@ -213,17 +190,10 @@ final class ManiphestTaskDetailController extends ManiphestController {
       $draft_text = null;
     }
 
-    $is_serious = PhabricatorEnv::getEnvConfig('phabricator.serious-business');
-
-    if ($is_serious) {
-      // Prevent tasks from being closed "out of spite" in serious business
-      // installs.
-      unset($resolution_types[ManiphestTaskStatus::STATUS_CLOSED_SPITE]);
-    }
-
     $comment_form = new AphrontFormView();
     $comment_form
       ->setUser($user)
+      ->setWorkflow(true)
       ->setAction('/maniphest/transaction/save/')
       ->setEncType('multipart/form-data')
       ->addHiddenInput('taskID', $task->getID())
@@ -235,7 +205,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
           ->setID('transaction-action'))
       ->appendChild(
         id(new AphrontFormSelectControl())
-          ->setLabel(pht('Resolution'))
+          ->setLabel(pht('Status'))
           ->setName('resolution')
           ->setControlID('resolution')
           ->setControlStyle('display: none')
@@ -280,6 +250,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
           ->setControlStyle('display: none'))
       ->appendChild(
         id(new PhabricatorRemarkupControl())
+          ->setUser($user)
           ->setLabel(pht('Comments'))
           ->setName('comments')
           ->setValue($draft_text)
@@ -287,34 +258,37 @@ final class ManiphestTaskDetailController extends ManiphestController {
           ->setUser($user))
       ->appendChild(
         id(new AphrontFormSubmitControl())
-          ->setValue($is_serious ? pht('Submit') : pht('Avast!')));
+          ->setValue(pht('Submit')));
 
     $control_map = array(
-      ManiphestTransaction::TYPE_STATUS   => 'resolution',
-      ManiphestTransaction::TYPE_OWNER    => 'assign_to',
-      ManiphestTransaction::TYPE_CCS      => 'ccs',
-      ManiphestTransaction::TYPE_PRIORITY => 'priority',
-      ManiphestTransaction::TYPE_PROJECTS => 'projects',
-      ManiphestTransaction::TYPE_ATTACH   => 'file',
+      ManiphestTransaction::TYPE_STATUS         => 'resolution',
+      ManiphestTransaction::TYPE_OWNER          => 'assign_to',
+      PhabricatorTransactions::TYPE_SUBSCRIBERS => 'ccs',
+      ManiphestTransaction::TYPE_PRIORITY       => 'priority',
+      PhabricatorTransactions::TYPE_EDGE        => 'projects',
     );
 
+    $projects_source = new PhabricatorProjectDatasource();
+    $users_source = new PhabricatorPeopleDatasource();
+    $mailable_source = new PhabricatorMetaMTAMailableDatasource();
+
     $tokenizer_map = array(
-      ManiphestTransaction::TYPE_PROJECTS => array(
+      PhabricatorTransactions::TYPE_EDGE => array(
         'id'          => 'projects-tokenizer',
-        'src'         => '/typeahead/common/projects/',
-        'placeholder' => pht('Type a project name...'),
+        'src'         => $projects_source->getDatasourceURI(),
+        'placeholder' => $projects_source->getPlaceholderText(),
       ),
       ManiphestTransaction::TYPE_OWNER => array(
         'id'          => 'assign-tokenizer',
-        'src'         => '/typeahead/common/users/',
+        'src'         => $users_source->getDatasourceURI(),
         'value'       => $default_claim,
         'limit'       => 1,
-        'placeholder' => pht('Type a user name...'),
+        'placeholder' => $users_source->getPlaceholderText(),
       ),
-      ManiphestTransaction::TYPE_CCS => array(
+      PhabricatorTransactions::TYPE_SUBSCRIBERS => array(
         'id'          => 'cc-tokenizer',
-        'src'         => '/typeahead/common/mailable/',
-        'placeholder' => pht('Type a user or mailing list...'),
+        'src'         => $mailable_source->getDatasourceURI(),
+        'placeholder' => $mailable_source->getPlaceholderText(),
       ),
     );
 
@@ -336,6 +310,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
       ));
     }
 
+    $is_serious = PhabricatorEnv::getEnvConfig('phabricator.serious-business');
     $comment_header = $is_serious
       ? pht('Add Comment')
       : pht('Weigh In');
@@ -349,18 +324,11 @@ final class ManiphestTaskDetailController extends ManiphestController {
           'aphront-panel-preview-loading-text',
           pht('Loading preview...'))));
 
-    $timeline = id(new PhabricatorApplicationTransactionView())
-      ->setUser($user)
-      ->setObjectPHID($task->getPHID())
-      ->setTransactions($transactions)
-      ->setMarkupEngine($engine);
-
     $object_name = 'T'.$task->getID();
     $actions = $this->buildActionView($task);
 
     $crumbs = $this->buildApplicationCrumbs()
-      ->addTextCrumb($object_name, '/'.$object_name)
-      ->setActionList($actions);
+      ->addTextCrumb($object_name, '/'.$object_name);
 
     $header = $this->buildHeaderView($task);
     $properties = $this->buildPropertyView(
@@ -379,6 +347,8 @@ final class ManiphestTaskDetailController extends ManiphestController {
         ->setFlush(true)
         ->setHeaderText($comment_header)
         ->appendChild($comment_form);
+      $timeline->setQuoteTargetID('transaction-comments');
+      $timeline->setQuoteRef($object_name);
     }
 
     $object_box = id(new PHUIObjectBoxView())
@@ -401,7 +371,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
       array(
         'title' => 'T'.$task->getID().' '.$task->getTitle(),
         'pageObjects' => array($task->getPHID()),
-        'device' => true,
       ));
   }
 
@@ -423,7 +392,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
   private function buildActionView(ManiphestTask $task) {
     $viewer = $this->getRequest()->getUser();
     $viewer_phid = $viewer->getPHID();
-    $viewer_is_cc = in_array($viewer_phid, $task->getCCPHIDs());
 
     $id = $task->getID();
     $phid = $task->getPHID();
@@ -441,37 +409,17 @@ final class ManiphestTaskDetailController extends ManiphestController {
     $view->addAction(
       id(new PhabricatorActionView())
         ->setName(pht('Edit Task'))
-        ->setIcon('edit')
+        ->setIcon('fa-pencil')
         ->setHref($this->getApplicationURI("/task/edit/{$id}/"))
         ->setDisabled(!$can_edit)
         ->setWorkflow(!$can_edit));
-
-    if ($task->getOwnerPHID() === $viewer_phid) {
-      $view->addAction(
-        id(new PhabricatorActionView())
-          ->setName(pht('Automatically Subscribed'))
-          ->setDisabled(true)
-          ->setIcon('enable'));
-    } else {
-      $action = $viewer_is_cc ? 'rem' : 'add';
-      $name   = $viewer_is_cc ? pht('Unsubscribe') : pht('Subscribe');
-      $icon   = $viewer_is_cc ? 'disable' : 'check';
-
-      $view->addAction(
-        id(new PhabricatorActionView())
-          ->setName($name)
-          ->setHref("/maniphest/subscribe/{$action}/{$id}/")
-          ->setRenderAsForm(true)
-          ->setUser($viewer)
-          ->setIcon($icon));
-    }
 
     $view->addAction(
       id(new PhabricatorActionView())
         ->setName(pht('Merge Duplicates In'))
         ->setHref("/search/attach/{$phid}/TASK/merge/")
         ->setWorkflow(true)
-        ->setIcon('merge')
+        ->setIcon('fa-compress')
         ->setDisabled(!$can_edit)
         ->setWorkflow(true));
 
@@ -479,14 +427,14 @@ final class ManiphestTaskDetailController extends ManiphestController {
       id(new PhabricatorActionView())
         ->setName(pht('Create Subtask'))
         ->setHref($this->getApplicationURI("/task/create/?parent={$id}"))
-        ->setIcon('fork'));
+        ->setIcon('fa-level-down'));
 
     $view->addAction(
       id(new PhabricatorActionView())
-        ->setName(pht('Edit Dependencies'))
-        ->setHref("/search/attach/{$phid}/TASK/dependencies/")
+        ->setName(pht('Edit Blocking Tasks'))
+        ->setHref("/search/attach/{$phid}/TASK/blocks/")
         ->setWorkflow(true)
-        ->setIcon('link')
+        ->setIcon('fa-link')
         ->setDisabled(!$can_edit)
         ->setWorkflow(true));
 
@@ -517,12 +465,6 @@ final class ManiphestTaskDetailController extends ManiphestController {
       ManiphestTaskPriority::getTaskPriorityName($task->getPriority()));
 
     $view->addProperty(
-      pht('Subscribers'),
-      $task->getCCPHIDs()
-      ? $this->renderHandlesForPHIDs($task->getCCPHIDs(), ',')
-      : phutil_tag('em', array(), pht('None')));
-
-    $view->addProperty(
       pht('Author'),
       $this->getHandle($task->getAuthorPHID())->renderLink());
 
@@ -534,92 +476,29 @@ final class ManiphestTaskDetailController extends ManiphestController {
         phutil_tag(
           'a',
           array(
-            'href' => 'mailto:'.$source.'?subject='.$subject
+            'href' => 'mailto:'.$source.'?subject='.$subject,
           ),
           $source));
     }
 
-    $project_phids = $task->getProjectPHIDs();
-    if ($project_phids) {
-      require_celerity_resource('maniphest-task-summary-css');
-
-      // If we end up with real-world projects with many hundreds of columns, it
-      // might be better to just load all the edges, then load those columns and
-      // work backward that way, or denormalize this data more.
-
-      $columns = id(new PhabricatorProjectColumnQuery())
-        ->setViewer($viewer)
-        ->withProjectPHIDs($project_phids)
-        ->execute();
-      $columns = mpull($columns, null, 'getPHID');
-
-      $column_edge_type = PhabricatorEdgeConfig::TYPE_OBJECT_HAS_COLUMN;
-      $all_column_phids = array_keys($columns);
-
-      $column_edge_query = id(new PhabricatorEdgeQuery())
-        ->withSourcePHIDs(array($task->getPHID()))
-        ->withEdgeTypes(array($column_edge_type))
-        ->withDestinationPHIDs($all_column_phids);
-      $column_edge_query->execute();
-      $in_column_phids = array_fuse($column_edge_query->getDestinationPHIDs());
-
-      $column_groups = mgroup($columns, 'getProjectPHID');
-
-      $project_rows = array();
-      foreach ($project_phids as $project_phid) {
-        $row = array();
-
-        $handle = $this->getHandle($project_phid);
-        $row[] = $handle->renderLink();
-
-        $columns = idx($column_groups, $project_phid, array());
-        $column = head(array_intersect_key($columns, $in_column_phids));
-        if ($column) {
-          $column_name = pht('(%s)', $column->getDisplayName());
-          // TODO: This is really hacky but there's no cleaner way to do it
-          // right now, T4022 should give us better tools for this.
-          $column_href = str_replace(
-            'project/view',
-            'project/board',
-            $handle->getURI());
-          $column_link = phutil_tag(
-            'a',
-            array(
-              'href' => $column_href,
-              'class' => 'maniphest-board-link',
-            ),
-            $column_name);
-
-          $row[] = ' ';
-          $row[] = $column_link;
-        }
-
-        $project_rows[] = phutil_tag('div', array(), $row);
-      }
-    } else {
-      $project_rows = phutil_tag('em', array(), pht('None'));
-    }
-
-    $view->addProperty(pht('Projects'), $project_rows);
-
     $edge_types = array(
-      PhabricatorEdgeConfig::TYPE_TASK_DEPENDED_ON_BY_TASK
-      => pht('Dependent Tasks'),
-      PhabricatorEdgeConfig::TYPE_TASK_DEPENDS_ON_TASK
-      => pht('Depends On'),
-      PhabricatorEdgeConfig::TYPE_TASK_HAS_RELATED_DREV
-      => pht('Differential Revisions'),
-      PhabricatorEdgeConfig::TYPE_TASK_HAS_MOCK
-      => pht('Pholio Mocks'),
+      ManiphestTaskDependedOnByTaskEdgeType::EDGECONST
+        => pht('Blocks'),
+      ManiphestTaskDependsOnTaskEdgeType::EDGECONST
+        => pht('Blocked By'),
+      ManiphestTaskHasRevisionEdgeType::EDGECONST
+        => pht('Differential Revisions'),
+      ManiphestTaskHasMockEdgeType::EDGECONST
+        => pht('Pholio Mocks'),
     );
 
     $revisions_commits = array();
     $handles = $this->getLoadedHandles();
 
     $commit_phids = array_keys(
-      $edges[PhabricatorEdgeConfig::TYPE_TASK_HAS_COMMIT]);
+      $edges[ManiphestTaskHasCommitEdgeType::EDGECONST]);
     if ($commit_phids) {
-      $commit_drev = PhabricatorEdgeConfig::TYPE_COMMIT_HAS_DREV;
+      $commit_drev = DiffusionCommitHasRevisionEdgeType::EDGECONST;
       $drev_edges = id(new PhabricatorEdgeQuery())
         ->withSourcePHIDs($commit_phids)
         ->withEdgeTypes(array($commit_drev))
@@ -630,7 +509,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
         $revision_phid = key($drev_edges[$phid][$commit_drev]);
         $revision_handle = idx($handles, $revision_phid);
         if ($revision_handle) {
-          $task_drev = PhabricatorEdgeConfig::TYPE_TASK_HAS_RELATED_DREV;
+          $task_drev = ManiphestTaskHasRevisionEdgeType::EDGECONST;
           unset($edges[$task_drev][$revision_phid]);
           $revisions_commits[$phid] = hsprintf(
             '%s / %s',
@@ -659,7 +538,7 @@ final class ManiphestTaskDetailController extends ManiphestController {
       $attached = array();
     }
 
-    $file_infos = idx($attached, PhabricatorFilePHIDTypeFile::TYPECONST);
+    $file_infos = idx($attached, PhabricatorFileFilePHIDType::TYPECONST);
     if ($file_infos) {
       $file_phids = array_keys($file_infos);
 
@@ -678,12 +557,12 @@ final class ManiphestTaskDetailController extends ManiphestController {
         $file_view->render());
     }
 
+    $view->invokeWillRenderEvent();
+
     $field_list->appendFieldsToPropertyList(
       $task,
       $viewer,
       $view);
-
-    $view->invokeWillRenderEvent();
 
     return $view;
   }

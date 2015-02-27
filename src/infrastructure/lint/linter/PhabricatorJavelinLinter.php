@@ -13,6 +13,17 @@ final class PhabricatorJavelinLinter extends ArcanistLinter {
   const LINT_UNKNOWN_DEPENDENCY = 4;
   const LINT_MISSING_BINARY = 5;
 
+  public function getInfoName() {
+    return 'Javelin Linter';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'This linter is intended for use with the Javelin JS library and '.
+      'extensions. Use `javelinsymbols` to run Javelin rules on Javascript '.
+      'source files.');
+  }
+
   private function getBinaryPath() {
     if ($this->symbolsBinary === null) {
       list($err, $stdout) = exec_manual('which javelinsymbols');
@@ -39,13 +50,17 @@ final class PhabricatorJavelinLinter extends ArcanistLinter {
       $futures[$path] = $future;
     }
 
-    foreach (Futures($futures)->limit(8) as $path => $future) {
+    foreach (id(new FutureIterator($futures))->limit(8) as $path => $future) {
       $this->symbols[$path] = $future->resolvex();
     }
   }
 
   public function getLinterName() {
     return 'JAVELIN';
+  }
+
+  public function getLinterConfigurationName() {
+    return 'javelin';
   }
 
   public function getLintSeverityMap() {
@@ -228,7 +243,7 @@ final class PhabricatorJavelinLinter extends ArcanistLinter {
       $matches = null;
       if (!preg_match('/^([?+\*])([^:]*):(\d+)$/', $line, $matches)) {
         throw new Exception(
-          "Received malformed output from `javelinsymbols`.");
+          'Received malformed output from `javelinsymbols`.');
       }
       $type = $matches[1];
       $symbol = $matches[2];

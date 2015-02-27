@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceNewController extends ConpherenceController {
 
   public function processRequest() {
@@ -15,6 +12,7 @@ final class ConpherenceNewController extends ConpherenceController {
     $message = '';
     $e_participants = null;
     $e_message = null;
+    $errors = array();
 
     // this comes from ajax requests from all over. should be a single phid.
 
@@ -32,10 +30,15 @@ final class ConpherenceNewController extends ConpherenceController {
         foreach ($error_codes as $error_code) {
           switch ($error_code) {
             case ConpherenceEditor::ERROR_EMPTY_MESSAGE:
-              $e_message = true;
+              $e_message = pht('Required');
+              $errors[] = pht(
+                'You can not send an empty message.');
               break;
             case ConpherenceEditor::ERROR_EMPTY_PARTICIPANTS:
-              $e_participants = true;
+              $e_participants = pht('Required');
+              $errors[] = pht(
+                'You must choose at least one recipient for your '.
+                'message.');
               break;
           }
         }
@@ -72,6 +75,7 @@ final class ConpherenceNewController extends ConpherenceController {
 
     $dialog = id(new AphrontDialogView())
       ->setWidth(AphrontDialogView::WIDTH_FORM)
+      ->setErrors($errors)
       ->setUser($user)
       ->setTitle($title)
       ->addCancelButton($cancel_uri)
@@ -85,18 +89,20 @@ final class ConpherenceNewController extends ConpherenceController {
         ->setName('participants')
         ->setValue($participant_handles)
         ->setUser($user)
-        ->setDatasource('/typeahead/common/users/')
+        ->setDatasource(new PhabricatorPeopleDatasource())
         ->setLabel(pht('To'))
         ->setError($e_participants))
       ->appendChild(
         id(new PhabricatorRemarkupControl())
-        ->setName('message')
-        ->setValue($message)
-        ->setLabel(pht('Message'))
-        ->setError($e_message));
+          ->setUser($user)
+          ->setName('message')
+          ->setValue($message)
+          ->setLabel(pht('Message'))
+          ->setError($e_message));
 
     $dialog->appendChild($form);
 
     return id(new AphrontDialogResponse())->setDialog($dialog);
   }
+
 }

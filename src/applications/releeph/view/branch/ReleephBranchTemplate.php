@@ -19,7 +19,10 @@ final class ReleephBranchTemplate {
     return $template;
   }
 
-  public static function getFakeCommitHandleFor($arc_project_id) {
+  public static function getFakeCommitHandleFor(
+    $arc_project_id,
+    PhabricatorUser $viewer) {
+
     $arc_project = id(new PhabricatorRepositoryArcanistProject())
       ->load($arc_project_id);
     if (!$arc_project) {
@@ -27,9 +30,19 @@ final class ReleephBranchTemplate {
         "No Arc project found with id '{$arc_project_id}'!");
     }
 
-    $repository = $arc_project->loadRepository();
-    return id(new PhabricatorObjectHandle())
-      ->setName($repository->formatCommitName('100000000000'));
+    $repository = null;
+    if ($arc_project->getRepositoryID()) {
+      $repository = id(new PhabricatorRepositoryQuery())
+        ->setViewer($viewer)
+        ->withIDs(array($arc_project->getRepositoryID()))
+        ->executeOne();
+    }
+    $fake_handle = 'SOFAKE';
+    if ($repository) {
+      $fake_handle = id(new PhabricatorObjectHandle())
+        ->setName($repository->formatCommitName('100000000000'));
+    }
+    return $fake_handle;
   }
 
   private $commitHandle;
@@ -174,9 +187,9 @@ final class ReleephBranchTemplate {
       $part_error = null;
       if (preg_match('{^\.}', $part) || preg_match('{\.$}', $part)) {
         $errors[] = "Path components cannot begin or end with '.'";
-      } elseif (preg_match('{^(?!\w)}', $part)) {
-        $errors[] = "Path components must begin with an alphanumeric";
-      } elseif (!preg_match('{^\w ([\w-_%\.]* [\w-_%])?$}x', $part)) {
+      } else if (preg_match('{^(?!\w)}', $part)) {
+        $errors[] = 'Path components must begin with an alphanumeric';
+      } else if (!preg_match('{^\w ([\w-_%\.]* [\w-_%])?$}x', $part)) {
         $errors[] =
           "Path components may only contain alphanumerics ".
           "or '-', '_', or '.'";

@@ -3,7 +3,7 @@
 final class DrydockManagementCloseWorkflow
   extends DrydockManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('close')
       ->setSynopsis('Close a resource.')
@@ -22,7 +22,7 @@ final class DrydockManagementCloseWorkflow
     $ids = $args->getArg('ids');
     if (!$ids) {
       throw new PhutilArgumentUsageException(
-        "Specify one or more resource IDs to close.");
+        'Specify one or more resource IDs to close.');
     }
 
     $viewer = $this->getViewer();

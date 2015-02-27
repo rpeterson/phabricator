@@ -3,7 +3,7 @@
 /**
  * @task page   Managing Pages
  */
-final class PHUIPagedFormView extends AphrontTagView {
+final class PHUIPagedFormView extends AphrontView {
 
   private $name = 'pages';
   private $pages = array();
@@ -220,13 +220,13 @@ final class PHUIPagedFormView extends AphrontTagView {
     return $this->cancelURI;
   }
 
-  public function getTagContent() {
+  public function render() {
     $form = id(new AphrontFormView())
       ->setUser($this->getUser());
 
     $selected_page = $this->getSelectedPage();
     if (!$selected_page) {
-      throw new Exception("No selected page!");
+      throw new Exception('No selected page!');
     }
 
     $form->addHiddenInput(
@@ -254,7 +254,7 @@ final class PHUIPagedFormView extends AphrontTagView {
     }
 
     if ($this->isLastPage($selected_page)) {
-      $submit->addSubmitButton(pht("Save"));
+      $submit->addSubmitButton(pht('Save'));
     } else {
       $submit->addSubmitButton(pht("Continue \xC2\xBB"));
     }

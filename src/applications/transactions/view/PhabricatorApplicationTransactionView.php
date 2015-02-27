@@ -7,10 +7,39 @@ class PhabricatorApplicationTransactionView extends AphrontView {
 
   private $transactions;
   private $engine;
-  private $anchorOffset = 1;
   private $showEditActions = true;
   private $isPreview;
   private $objectPHID;
+  private $shouldTerminate = false;
+  private $quoteTargetID;
+  private $quoteRef;
+  private $pager;
+  private $renderAsFeed;
+  private $renderData = array();
+  private $hideCommentOptions = false;
+
+  public function setRenderAsFeed($feed) {
+    $this->renderAsFeed = $feed;
+    return $this;
+  }
+
+  public function setQuoteRef($quote_ref) {
+    $this->quoteRef = $quote_ref;
+    return $this;
+  }
+
+  public function getQuoteRef() {
+    return $this->quoteRef;
+  }
+
+  public function setQuoteTargetID($quote_target_id) {
+    $this->quoteTargetID = $quote_target_id;
+    return $this;
+  }
+
+  public function getQuoteTargetID() {
+    return $this->quoteTargetID;
+  }
 
   public function setObjectPHID($object_phid) {
     $this->objectPHID = $object_phid;
@@ -35,11 +64,6 @@ class PhabricatorApplicationTransactionView extends AphrontView {
     return $this->showEditActions;
   }
 
-  public function setAnchorOffset($anchor_offset) {
-    $this->anchorOffset = $anchor_offset;
-    return $this;
-  }
-
   public function setMarkupEngine(PhabricatorMarkupEngine $engine) {
     $this->engine = $engine;
     return $this;
@@ -51,10 +75,50 @@ class PhabricatorApplicationTransactionView extends AphrontView {
     return $this;
   }
 
+  public function getTransactions() {
+    return $this->transactions;
+  }
+
+  public function setShouldTerminate($term) {
+    $this->shouldTerminate = $term;
+    return $this;
+  }
+
+  public function setPager(AphrontCursorPagerView $pager) {
+    $this->pager = $pager;
+    return $this;
+  }
+
+  public function getPager() {
+    return $this->pager;
+  }
+
+  /**
+   * This is additional data that may be necessary to render the next set
+   * of transactions. Objects that implement
+   * PhabricatorApplicationTransactionInterface use this data in
+   * willRenderTimeline.
+   */
+  public function setRenderData(array $data) {
+    $this->renderData = $data;
+    return $this;
+  }
+
+  public function getRenderData() {
+    return $this->renderData;
+  }
+
+  public function setHideCommentOptions($hide_comment_options) {
+    $this->hideCommentOptions = $hide_comment_options;
+    return $this;
+  }
+
+  public function getHideCommentOptions() {
+    return $this->hideCommentOptions;
+  }
+
   public function buildEvents($with_hiding = false) {
     $user = $this->getUser();
-
-    $anchor = $this->anchorOffset;
 
     $xactions = $this->transactions;
 
@@ -96,21 +160,29 @@ class PhabricatorApplicationTransactionView extends AphrontView {
 
     $events = array();
     $hide_by_default = ($show_group !== null);
+    $set_next_page_id = false;
 
     foreach ($groups as $group_key => $group) {
       if ($hide_by_default && ($show_group === $group_key)) {
         $hide_by_default = false;
+        $set_next_page_id = true;
       }
 
       $group_event = null;
       foreach ($group as $xaction) {
-        $event = $this->renderEvent($xaction, $group, $anchor);
+        $event = $this->renderEvent($xaction, $group);
         $event->setHideByDefault($hide_by_default);
-        $anchor++;
         if (!$group_event) {
           $group_event = $event;
         } else {
           $group_event->addEventToGroup($event);
+        }
+        if ($set_next_page_id) {
+          $set_next_page_id = false;
+          $pager = $this->getPager();
+          if ($pager) {
+            $pager->setNextPageID($xaction->getID());
+          }
         }
       }
       $events[] = $group_event;
@@ -122,30 +194,40 @@ class PhabricatorApplicationTransactionView extends AphrontView {
 
   public function render() {
     if (!$this->getObjectPHID()) {
-      throw new Exception("Call setObjectPHID() before render()!");
+      throw new Exception('Call setObjectPHID() before render()!');
     }
 
-    $view = new PHUITimelineView();
-    $events = $this->buildEvents($with_hiding = true);
-    foreach ($events as $event) {
-      $view->addEvent($event);
-    }
+    $view = $this->buildPHUITimelineView();
 
     if ($this->getShowEditActions()) {
-      $list_id = celerity_generate_unique_node_id();
-
-      $view->setID($list_id);
-
-      Javelin::initBehavior(
-        'phabricator-transaction-list',
-        array(
-          'listID'      => $list_id,
-          'objectPHID'  => $this->getObjectPHID(),
-          'nextAnchor'  => $this->anchorOffset + count($events),
-        ));
+      Javelin::initBehavior('phabricator-transaction-list');
     }
 
     return $view->render();
+  }
+
+  public function buildPHUITimelineView($with_hiding = true) {
+    if (!$this->getObjectPHID()) {
+      throw new Exception(
+        'Call setObjectPHID() before buildPHUITimelineView()!');
+    }
+
+    $view = new PHUITimelineView();
+    $view->setShouldTerminate($this->shouldTerminate);
+    $view->setQuoteTargetID($this->getQuoteTargetID());
+    $view->setQuoteRef($this->getQuoteRef());
+    $events = $this->buildEvents($with_hiding);
+    foreach ($events as $event) {
+      $view->addEvent($event);
+    }
+    if ($this->getPager()) {
+      $view->setPager($this->getPager());
+    }
+    if ($this->getRenderData()) {
+      $view->setRenderData($this->getRenderData());
+    }
+
+    return $view;
   }
 
   protected function getOrBuildEngine() {
@@ -180,6 +262,22 @@ class PhabricatorApplicationTransactionView extends AphrontView {
       pht('(Show Details)'));
   }
 
+  private function buildExtraInformationLink(
+    PhabricatorApplicationTransaction $xaction) {
+
+    $link = $xaction->renderExtraInformationLink();
+    if (!$link) {
+      return null;
+    }
+
+    return phutil_tag(
+      'span',
+      array(
+        'class' => 'phui-timeline-extra-information',
+      ),
+      array(" \xC2\xB7  ", $link));
+  }
+
   protected function shouldGroupTransactions(
     PhabricatorApplicationTransaction $u,
     PhabricatorApplicationTransaction $v) {
@@ -193,14 +291,40 @@ class PhabricatorApplicationTransactionView extends AphrontView {
     $engine = $this->getOrBuildEngine();
     $comment = $xaction->getComment();
 
-    if ($xaction->hasComment()) {
-      if ($comment->getIsDeleted()) {
-        return phutil_tag(
-          'em',
-          array(),
+    if ($comment) {
+      if ($comment->getIsRemoved()) {
+        return javelin_tag(
+          'span',
+          array(
+            'class' => 'comment-deleted',
+            'sigil' => 'transaction-comment',
+            'meta'  => array('phid' => $comment->getTransactionPHID()),
+          ),
+          pht(
+            'This comment was removed by %s.',
+            $xaction->getHandle($comment->getAuthorPHID())->renderLink()));
+      } else if ($comment->getIsDeleted()) {
+        return javelin_tag(
+          'span',
+          array(
+            'class' => 'comment-deleted',
+            'sigil' => 'transaction-comment',
+            'meta'  => array('phid' => $comment->getTransactionPHID()),
+          ),
           pht('This comment has been deleted.'));
+      } else if ($xaction->hasComment()) {
+        return javelin_tag(
+          'span',
+          array(
+            'class' => 'transaction-comment',
+            'sigil' => 'transaction-comment',
+            'meta'  => array('phid' => $comment->getTransactionPHID()),
+          ),
+          $engine->getOutput($comment, $field));
       } else {
-        return $engine->getOutput($comment, $field);
+        // This is an empty, non-deleted comment. Usually this happens when
+        // rendering previews.
+        return null;
       }
     }
 
@@ -266,8 +390,7 @@ class PhabricatorApplicationTransactionView extends AphrontView {
 
   private function renderEvent(
     PhabricatorApplicationTransaction $xaction,
-    array $group,
-    $anchor) {
+    array $group) {
     $viewer = $this->getUser();
 
     $event = id(new PHUITimelineEventView())
@@ -275,10 +398,20 @@ class PhabricatorApplicationTransactionView extends AphrontView {
       ->setTransactionPHID($xaction->getPHID())
       ->setUserHandle($xaction->getHandle($xaction->getAuthorPHID()))
       ->setIcon($xaction->getIcon())
-      ->setColor($xaction->getColor());
+      ->setColor($xaction->getColor())
+      ->setHideCommentOptions($this->getHideCommentOptions());
+
+    list($token, $token_removed) = $xaction->getToken();
+    if ($token) {
+      $event->setToken($token, $token_removed);
+    }
 
     if (!$this->shouldSuppressTitle($xaction, $group)) {
-      $title = $xaction->getTitle();
+      if ($this->renderAsFeed) {
+        $title = $xaction->getTitleForFeed();
+      } else {
+        $title = $xaction->getTitle();
+      }
       if ($xaction->hasChangeDetails()) {
         if (!$this->isPreview) {
           $details = $this->buildChangeDetailsLink($xaction);
@@ -289,6 +422,14 @@ class PhabricatorApplicationTransactionView extends AphrontView {
           );
         }
       }
+
+      if (!$this->isPreview) {
+        $more = $this->buildExtraInformationLink($xaction);
+        if ($more) {
+          $title = array($title, ' ', $more);
+        }
+      }
+
       $event->setTitle($title);
     }
 
@@ -298,15 +439,40 @@ class PhabricatorApplicationTransactionView extends AphrontView {
       $event
         ->setDateCreated($xaction->getDateCreated())
         ->setContentSource($xaction->getContentSource())
-        ->setAnchor($anchor);
+        ->setAnchor($xaction->getID());
     }
 
-    $has_deleted_comment = $xaction->getComment() &&
-      $xaction->getComment()->getIsDeleted();
+    $transaction_type = $xaction->getTransactionType();
+    $comment_type = PhabricatorTransactions::TYPE_COMMENT;
+    $is_normal_comment = ($transaction_type == $comment_type);
 
-    if ($this->getShowEditActions() && !$this->isPreview) {
-      if ($xaction->getCommentVersion() > 1) {
+    if ($this->getShowEditActions() &&
+        !$this->isPreview &&
+        $is_normal_comment) {
+
+      $has_deleted_comment =
+        $xaction->getComment() &&
+        $xaction->getComment()->getIsDeleted();
+
+      $has_removed_comment =
+        $xaction->getComment() &&
+        $xaction->getComment()->getIsRemoved();
+
+      if ($xaction->getCommentVersion() > 1 && !$has_removed_comment) {
         $event->setIsEdited(true);
+      }
+
+      $event->setIsNormalComment(true);
+
+      // If we have a place for quoted text to go and this is a quotable
+      // comment, pass the quote target ID to the event view.
+      if ($this->getQuoteTargetID()) {
+        if ($xaction->hasComment()) {
+          if (!$has_removed_comment && !$has_deleted_comment) {
+            $event->setQuoteTargetID($this->getQuoteTargetID());
+            $event->setQuoteRef($this->getQuoteRef());
+          }
+        }
       }
 
       $can_edit = PhabricatorPolicyCapability::CAN_EDIT;
@@ -316,15 +482,20 @@ class PhabricatorApplicationTransactionView extends AphrontView {
           $viewer,
           $xaction,
           $can_edit);
-        if ($has_edit_capability) {
+        if ($has_edit_capability && !$has_removed_comment) {
           $event->setIsEditable(true);
+        }
+        if ($has_edit_capability || $viewer->getIsAdmin()) {
+          if (!$has_removed_comment) {
+            $event->setIsRemovable(true);
+          }
         }
       }
     }
 
-    $content = $this->renderTransactionContent($xaction);
-    if ($content) {
-      $event->appendChild($content);
+    $comment = $this->renderTransactionContent($xaction);
+    if ($comment) {
+      $event->appendChild($comment);
     }
 
     return $event;

@@ -3,7 +3,7 @@
 final class DrydockManagementReleaseWorkflow
   extends DrydockManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('release')
       ->setSynopsis('Release a lease.')
@@ -22,7 +22,7 @@ final class DrydockManagementReleaseWorkflow
     $ids = $args->getArg('ids');
     if (!$ids) {
       throw new PhutilArgumentUsageException(
-        "Specify one or more lease IDs to release.");
+        'Specify one or more lease IDs to release.');
     }
 
     $viewer = $this->getViewer();

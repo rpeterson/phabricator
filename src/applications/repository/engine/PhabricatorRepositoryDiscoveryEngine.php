@@ -61,7 +61,8 @@ final class PhabricatorRepositoryDiscoveryEngine
         $repository,
         $ref->getIdentifier(),
         $ref->getEpoch(),
-        $ref->getCanCloseImmediately());
+        $ref->getCanCloseImmediately(),
+        $ref->getParents());
 
       $this->commitCache[$ref->getIdentifier()] = true;
     }
@@ -102,21 +103,23 @@ final class PhabricatorRepositoryDiscoveryEngine
         'Discovering commits in repository %s.',
         $repository->getCallsign()));
 
+    $this->fillCommitCache(array_values($branches));
+
     $refs = array();
     foreach ($branches as $name => $commit) {
       $this->log(pht('Examining branch "%s", at "%s".', $name, $commit));
 
       if (!$repository->shouldTrackBranch($name)) {
-        $this->log(pht("Skipping, branch is untracked."));
+        $this->log(pht('Skipping, branch is untracked.'));
         continue;
       }
 
       if ($this->isKnownCommit($commit)) {
-        $this->log(pht("Skipping, HEAD is known."));
+        $this->log(pht('Skipping, HEAD is known.'));
         continue;
       }
 
-      $this->log(pht("Looking for new commits."));
+      $this->log(pht('Looking for new commits.'));
 
       $branch_refs = $this->discoverStreamAncestry(
         new PhabricatorGitGraphStream($repository, $commit),
@@ -129,99 +132,6 @@ final class PhabricatorRepositoryDiscoveryEngine
     }
 
     return array_mergev($refs);
-  }
-
-
-  /**
-   * Verify that the "origin" remote exists, and points at the correct URI.
-   *
-   * This catches or corrects some types of misconfiguration, and also repairs
-   * an issue where Git 1.7.1 does not create an "origin" for `--bare` clones.
-   * See T4041.
-   *
-   * @param   PhabricatorRepository Repository to verify.
-   * @return  void
-   */
-  private function verifyGitOrigin(PhabricatorRepository $repository) {
-    list($remotes) = $repository->execxLocalCommand(
-      'remote show -n origin');
-
-    $matches = null;
-    if (!preg_match('/^\s*Fetch URL:\s*(.*?)\s*$/m', $remotes, $matches)) {
-      throw new Exception(
-        "Expected 'Fetch URL' in 'git remote show -n origin'.");
-    }
-
-    $remote_uri = $matches[1];
-    $expect_remote = $repository->getRemoteURI();
-
-    if ($remote_uri == "origin") {
-      // If a remote does not exist, git pretends it does and prints out a
-      // made up remote where the URI is the same as the remote name. This is
-      // definitely not correct.
-
-      // Possibly, we should use `git remote --verbose` instead, which does not
-      // suffer from this problem (but is a little more complicated to parse).
-      $valid = false;
-      $exists = false;
-    } else {
-      $normal_type_git = PhabricatorRepositoryURINormalizer::TYPE_GIT;
-
-      $remote_normal = id(new PhabricatorRepositoryURINormalizer(
-        $normal_type_git,
-        $remote_uri))->getNormalizedPath();
-
-      $expect_normal = id(new PhabricatorRepositoryURINormalizer(
-        $normal_type_git,
-        $expect_remote))->getNormalizedPath();
-
-      $valid = ($remote_normal == $expect_normal);
-      $exists = true;
-    }
-
-    if (!$valid) {
-      if (!$exists) {
-        // If there's no "origin" remote, just create it regardless of how
-        // strongly we own the working copy. There is almost no conceivable
-        // scenario in which this could do damage.
-        $this->log(
-          pht(
-            'Remote "origin" does not exist. Creating "origin", with '.
-            'URI "%s".',
-            $expect_remote));
-        $repository->execxLocalCommand(
-          'remote add origin %P',
-          $repository->getRemoteURIEnvelope());
-
-        // NOTE: This doesn't fetch the origin (it just creates it), so we won't
-        // know about origin branches until the next "pull" happens. That's fine
-        // for our purposes, but might impact things in the future.
-      } else {
-        if ($repository->canDestroyWorkingCopy()) {
-          // Bad remote, but we can try to repair it.
-          $this->log(
-            pht(
-              'Remote "origin" exists, but is pointed at the wrong URI, "%s". '.
-              'Resetting origin URI to "%s.',
-              $remote_uri,
-              $expect_remote));
-          $repository->execxLocalCommand(
-            'remote set-url origin %P',
-            $repository->getRemoteURIEnvelope());
-        } else {
-          // Bad remote and we aren't comfortable repairing it.
-          $message = pht(
-            'Working copy at "%s" has a mismatched origin URI, "%s". '.
-            'The expected origin URI is "%s". Fix your configuration, or '.
-            'set the remote URI correctly. To avoid breaking anything, '.
-            'Phabricator will not automatically fix this.',
-            $repository->getLocalPath(),
-            $remote_uri,
-            $expect_remote);
-          throw new Exception($message);
-        }
-      }
-    }
   }
 
 
@@ -354,6 +264,8 @@ final class PhabricatorRepositoryDiscoveryEngine
       ->setRepository($repository)
       ->execute();
 
+    $this->fillCommitCache(mpull($branches, 'getCommitIdentifier'));
+
     $refs = array();
     foreach ($branches as $branch) {
       // NOTE: Mercurial branches may have multiple heads, so the names may
@@ -363,16 +275,16 @@ final class PhabricatorRepositoryDiscoveryEngine
 
       $this->log(pht('Examining branch "%s" head "%s".', $name, $commit));
       if (!$repository->shouldTrackBranch($name)) {
-        $this->log(pht("Skipping, branch is untracked."));
+        $this->log(pht('Skipping, branch is untracked.'));
         continue;
       }
 
       if ($this->isKnownCommit($commit)) {
-        $this->log(pht("Skipping, this head is a known commit."));
+        $this->log(pht('Skipping, this head is a known commit.'));
         continue;
       }
 
-      $this->log(pht("Looking for new commits."));
+      $this->log(pht('Looking for new commits.'));
 
       $branch_refs = $this->discoverStreamAncestry(
         new PhabricatorMercurialGraphStream($repository, $commit),
@@ -432,7 +344,8 @@ final class PhabricatorRepositoryDiscoveryEngine
       $refs[] = id(new PhabricatorRepositoryCommitRef())
         ->setIdentifier($commit)
         ->setEpoch($stream->getCommitDate($commit))
-        ->setCanCloseImmediately($close_immediately);
+        ->setCanCloseImmediately($close_immediately)
+        ->setParents($stream->getParents($commit));
     }
 
     return $refs;
@@ -473,23 +386,29 @@ final class PhabricatorRepositoryDiscoveryEngine
       return false;
     }
 
-    $commit = id(new PhabricatorRepositoryCommit())->loadOneWhere(
-      'repositoryID = %d AND commitIdentifier = %s',
-      $this->getRepository()->getID(),
-      $identifier);
+    $this->fillCommitCache(array($identifier));
 
-    if (!$commit) {
-      return false;
+    return isset($this->commitCache[$identifier]);
+  }
+
+  private function fillCommitCache(array $identifiers) {
+    if (!$identifiers) {
+      return;
     }
 
-    $this->commitCache[$identifier] = true;
+    $commits = id(new PhabricatorRepositoryCommit())->loadAllWhere(
+      'repositoryID = %d AND commitIdentifier IN (%Ls)',
+      $this->getRepository()->getID(),
+      $identifiers);
+
+    foreach ($commits as $commit) {
+      $this->commitCache[$commit->getCommitIdentifier()] = true;
+    }
+
     while (count($this->commitCache) > self::MAX_COMMIT_CACHE_SIZE) {
       array_shift($this->commitCache);
     }
-
-    return true;
   }
-
 
   /**
    * Sort branches so we process closeable branches first. This makes the
@@ -524,7 +443,8 @@ final class PhabricatorRepositoryDiscoveryEngine
     PhabricatorRepository $repository,
     $commit_identifier,
     $epoch,
-    $close_immediately) {
+    $close_immediately,
+    array $parents) {
 
     $commit = new PhabricatorRepositoryCommit();
     $commit->setRepositoryID($repository->getID());
@@ -536,17 +456,61 @@ final class PhabricatorRepositoryDiscoveryEngine
 
     $data = new PhabricatorRepositoryCommitData();
 
+    $conn_w = $repository->establishConnection('w');
+
     try {
+
+      // If this commit has parents, look up their IDs. The parent commits
+      // should always exist already.
+
+      $parent_ids = array();
+      if ($parents) {
+        $parent_rows = queryfx_all(
+          $conn_w,
+          'SELECT id, commitIdentifier FROM %T
+            WHERE commitIdentifier IN (%Ls) AND repositoryID = %d',
+          $commit->getTableName(),
+          $parents,
+          $repository->getID());
+
+        $parent_map = ipull($parent_rows, 'id', 'commitIdentifier');
+
+        foreach ($parents as $parent) {
+          if (empty($parent_map[$parent])) {
+            throw new Exception(
+              pht('Unable to identify parent "%s"!', $parent));
+          }
+          $parent_ids[] = $parent_map[$parent];
+        }
+      } else {
+        // Write an explicit 0 so we can distinguish between "really no
+        // parents" and "data not available".
+        if (!$repository->isSVN()) {
+          $parent_ids = array(0);
+        }
+      }
+
       $commit->openTransaction();
         $commit->save();
+
         $data->setCommitID($commit->getID());
         $data->save();
+
+        foreach ($parent_ids as $parent_id) {
+          queryfx(
+            $conn_w,
+            'INSERT IGNORE INTO %T (childCommitID, parentCommitID)
+              VALUES (%d, %d)',
+            PhabricatorRepository::TABLE_PARENTS,
+            $commit->getID(),
+            $parent_id);
+        }
       $commit->saveTransaction();
 
       $this->insertTask($repository, $commit);
 
       queryfx(
-        $repository->establishConnection('w'),
+        $conn_w,
         'INSERT INTO %T (repositoryID, size, lastCommitID, epoch)
           VALUES (%d, 1, %d, %d)
           ON DUPLICATE KEY UPDATE
@@ -573,7 +537,9 @@ final class PhabricatorRepositoryDiscoveryEngine
             'commit'      => $commit,
           )));
 
-    } catch (AphrontQueryDuplicateKeyException $ex) {
+
+
+    } catch (AphrontDuplicateKeyQueryException $ex) {
       $commit->killTransaction();
       // Ignore. This can happen because we discover the same new commit
       // more than once when looking at history, or because of races or

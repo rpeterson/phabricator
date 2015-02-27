@@ -108,6 +108,12 @@ final class PhabricatorCustomFieldList extends Phobject {
 
     foreach ($enabled as $field_key => $field) {
       $field_handles = array_select_keys($handles, $phids[$field_key]);
+
+      $instructions = $field->getInstructionsForEdit();
+      if (strlen($instructions)) {
+        $form->appendRemarkupInstructions($instructions);
+      }
+
       $form->appendChild($field->renderEditControl($field_handles));
     }
   }
@@ -333,8 +339,6 @@ final class PhabricatorCustomFieldList extends Phobject {
       }
       $field->updateAbstractDocument($document);
     }
-
-    return $document;
   }
 
 

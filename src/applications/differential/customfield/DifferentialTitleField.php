@@ -75,8 +75,7 @@ final class DifferentialTitleField
   }
 
   public function getApplicationTransactionTitleForFeed(
-    PhabricatorApplicationTransaction $xaction,
-    PhabricatorFeedStory $story) {
+    PhabricatorApplicationTransaction $xaction) {
 
     $object_phid = $xaction->getObjectPHID();
     $author_phid = $xaction->getAuthorPHID();
@@ -110,8 +109,8 @@ final class DifferentialTitleField
     if (!strlen($value)) {
       throw new DifferentialFieldValidationException(
         pht(
-          "You must provide a revision title in the first line ".
-          "of your commit message."));
+          'You must provide a revision title in the first line '.
+          'of your commit message.'));
     }
 
     if (preg_match('/^<<.*>>$/', $value)) {

@@ -15,11 +15,7 @@ final class PhabricatorInlineSummaryView extends AphrontView {
 
   public function render() {
     require_celerity_resource('inline-comment-summary-css');
-    return hsprintf('%s%s', $this->renderHeader(), $this->renderTable());
-  }
-
-  private function renderHeader() {
-    return phutil_tag_div('phabricator-inline-summary', pht('Inline Comments'));
+    return hsprintf('%s', $this->renderTable());
   }
 
   private function renderTable() {
@@ -34,10 +30,17 @@ final class PhabricatorInlineSummaryView extends AphrontView {
         }
       }
 
-      $rows[] = phutil_tag(
-        'tr',
-        array(),
-        phutil_tag('th', array('colspan' => 3), $group));
+      $icon = id(new PHUIIconView())
+        ->setIconFont('fa-file-code-o darkbluetext mmr');
+      $header = phutil_tag(
+        'th',
+        array(
+          'colspan' => 3,
+        ),
+        array(
+          $icon,
+          $group,));
+      $rows[] = phutil_tag('tr', array(), $header);
 
       foreach ($items as $item) {
         $line = $item['line'];
@@ -59,6 +62,9 @@ final class PhabricatorInlineSummaryView extends AphrontView {
         }
 
         if ($href) {
+          $icon = id(new PHUIIconView())
+            ->setIconFont('fa-share darkbluetext mmr');
+
           $lines = phutil_tag(
             'a',
             array(
@@ -67,6 +73,7 @@ final class PhabricatorInlineSummaryView extends AphrontView {
               'class'   => 'num',
             ),
             array(
+              $icon,
               $lines,
               $tail,
             ));
@@ -89,7 +96,8 @@ final class PhabricatorInlineSummaryView extends AphrontView {
                 'class' => 'inline-summary-content',
                 'colspan' => $colspan,
               ),
-              phutil_tag_div('phabricator-remarkup', $item['content']))));
+              phutil_tag_div('phabricator-remarkup', $item['content'])),
+            ));
       }
     }
 

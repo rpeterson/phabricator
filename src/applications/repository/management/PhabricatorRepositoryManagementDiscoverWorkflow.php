@@ -3,7 +3,7 @@
 final class PhabricatorRepositoryManagementDiscoverWorkflow
   extends PhabricatorRepositoryManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('discover')
       ->setExamples('**discover** [__options__] __repository__ ...')
@@ -31,7 +31,7 @@ final class PhabricatorRepositoryManagementDiscoverWorkflow
 
     if (!$repos) {
       throw new PhutilArgumentUsageException(
-        "Specify one or more repositories to discover, by callsign.");
+        'Specify one or more repositories to discover, by callsign.');
     }
 
     $console = PhutilConsole::getConsole();

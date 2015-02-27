@@ -31,14 +31,15 @@ final class ConpherenceUpdateController
       ->executeOne();
 
     $action = $request->getStr('action', ConpherenceUpdateActions::METADATA);
+
     $latest_transaction_id = null;
-    $response_mode = 'ajax';
+    $response_mode = $request->isAjax() ? 'ajax' : 'redirect';
     $error_view = null;
     $e_file = array();
     $errors = array();
     $delete_draft = false;
     $xactions = array();
-    if ($request->isFormPost()) {
+    if ($request->isFormPost() || ($action == ConpherenceUpdateActions::LOAD)) {
       $editor = id(new ConpherenceEditor())
         ->setContinueOnNoEffect($request->isContinueRequest())
         ->setContentSourceFromRequest($request)
@@ -55,6 +56,7 @@ final class ConpherenceUpdateController
         case ConpherenceUpdateActions::MESSAGE:
           $message = $request->getStr('text');
           $xactions = $editor->generateTransactionsFromText(
+            $user,
             $conpherence,
             $message);
           $delete_draft = true;
@@ -113,24 +115,32 @@ final class ConpherenceUpdateController
               'That was a non-update. Try cancel.');
           }
           break;
+        case ConpherenceUpdateActions::LOAD:
+          $updated = false;
+          $response_mode = 'ajax';
+          break;
         default:
           throw new Exception('Unknown action: '.$action);
           break;
       }
-      if ($xactions) {
-        try {
-          $xactions = $editor->applyTransactions($conpherence, $xactions);
-          if ($delete_draft) {
-            $draft = PhabricatorDraft::newFromUserAndKey(
-              $user,
-              $conpherence->getPHID());
-            $draft->delete();
+
+      if ($xactions || ($action == ConpherenceUpdateActions::LOAD)) {
+        if ($xactions) {
+          try {
+            $xactions = $editor->applyTransactions($conpherence, $xactions);
+            if ($delete_draft) {
+              $draft = PhabricatorDraft::newFromUserAndKey(
+                $user,
+                $conpherence->getPHID());
+              $draft->delete();
+            }
+          } catch (PhabricatorApplicationTransactionNoEffectException $ex) {
+            return id(new PhabricatorApplicationTransactionNoEffectResponse())
+              ->setCancelURI($this->getApplicationURI($conpherence_id.'/'))
+              ->setException($ex);
           }
-        } catch (PhabricatorApplicationTransactionNoEffectException $ex) {
-          return id(new PhabricatorApplicationTransactionNoEffectResponse())
-            ->setCancelURI($this->getApplicationURI($conpherence_id.'/'))
-            ->setException($ex);
         }
+
         switch ($response_mode) {
           case 'ajax':
             $latest_transaction_id = $request->getInt('latest_transaction_id');
@@ -155,9 +165,7 @@ final class ConpherenceUpdateController
     }
 
     if ($errors) {
-      $error_view = id(new AphrontErrorView())
-        ->setTitle(pht('Errors editing conpherence.'))
-        ->setInsideDialogue(true)
+      $error_view = id(new PHUIErrorView())
         ->setErrors($errors);
     }
 
@@ -198,12 +206,15 @@ final class ConpherenceUpdateController
         id(new AphrontFormTokenizerControl())
         ->setName('add_person')
         ->setUser($user)
-        ->setDatasource('/typeahead/common/users/'));
+        ->setDatasource(new PhabricatorPeopleDatasource()));
 
     require_celerity_resource('conpherence-update-css');
     return id(new AphrontDialogView())
       ->setTitle(pht('Add Participants'))
       ->addHiddenInput('action', 'add_person')
+      ->addHiddenInput(
+        'latest_transaction_id',
+        $request->getInt('latest_transaction_id'))
       ->appendChild($form);
     }
 
@@ -233,8 +244,11 @@ final class ConpherenceUpdateController
     return id(new AphrontDialogView())
       ->setTitle(pht('Remove Participants'))
       ->addHiddenInput('action', 'remove_person')
-      ->addHiddenInput('__continue__', true)
       ->addHiddenInput('remove_person', $remove_person)
+      ->addHiddenInput(
+        'latest_transaction_id',
+        $request->getInt('latest_transaction_id'))
+      ->addHiddenInput('__continue__', true)
       ->appendChild($body);
   }
 
@@ -242,6 +256,7 @@ final class ConpherenceUpdateController
     ConpherenceThread $conpherence,
     $error_view) {
 
+    $request = $this->getRequest();
     $form = id(new PHUIFormLayoutView())
       ->appendChild($error_view)
       ->appendChild(
@@ -254,6 +269,9 @@ final class ConpherenceUpdateController
     return id(new AphrontDialogView())
       ->setTitle(pht('Update Conpherence'))
       ->addHiddenInput('action', 'metadata')
+      ->addHiddenInput(
+        'latest_transaction_id',
+        $request->getInt('latest_transaction_id'))
       ->addHiddenInput('__continue__', true)
       ->appendChild($form);
   }
@@ -267,6 +285,7 @@ final class ConpherenceUpdateController
     $need_transactions = false;
     switch ($action) {
       case ConpherenceUpdateActions::METADATA:
+      case ConpherenceUpdateActions::LOAD:
         $need_transactions = true;
         break;
       case ConpherenceUpdateActions::MESSAGE:

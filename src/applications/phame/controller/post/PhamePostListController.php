@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhamePostListController extends PhameController {
 
   private $bloggername;
@@ -78,6 +75,7 @@ final class PhamePostListController extends PhameController {
       ->appendChild($post_list);
 
     $crumbs = $this->buildApplicationCrumbs();
+    $crumbs->setBorder(true);
     $crumbs->addTextCrumb($title, $this->getApplicationURI());
 
     $nav->appendChild(
@@ -90,9 +88,7 @@ final class PhamePostListController extends PhameController {
       $nav,
       array(
         'title'   => $title,
-        'device'  => true,
       ));
   }
-
 
 }

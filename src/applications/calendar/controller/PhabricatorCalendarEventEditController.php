@@ -47,6 +47,9 @@ final class PhabricatorCalendarEventEditController
             PhabricatorPolicyCapability::CAN_EDIT,
           ))
         ->executeOne();
+      if (!$status) {
+        return new Aphront404Response();
+      }
 
       $end_time->setValue($status->getDateTo());
       $start_time->setValue($status->getDateFrom());
@@ -100,7 +103,7 @@ final class PhabricatorCalendarEventEditController
 
     $error_view = null;
     if ($errors) {
-      $error_view = id(new AphrontErrorView())
+      $error_view = id(new PHUIErrorView())
         ->setTitle(pht('Status can not be set!'))
         ->setErrors($errors);
     }
@@ -187,7 +190,6 @@ final class PhabricatorCalendarEventEditController
       $nav,
       array(
         'title' => $page_title,
-        'device' => true
       ));
   }
 

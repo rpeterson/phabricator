@@ -11,7 +11,7 @@ final class PhabricatorMailManagementReceiveTestWorkflow
           'Simulate receiving mail. This is primarily useful if you are '.
           'developing new mail receivers.'))
       ->setExamples(
-        "**receive-test** --as alincoln --to D123 < body.txt")
+        '**receive-test** --as alincoln --to D123 < body.txt')
       ->setArguments(
         array(
           array(
@@ -35,7 +35,32 @@ final class PhabricatorMailManagementReceiveTestWorkflow
   public function execute(PhutilArgumentParser $args) {
     $console = PhutilConsole::getConsole();
 
+    $to = $args->getArg('to');
+    if (!$to) {
+      throw new PhutilArgumentUsageException(
+        "Use '--to' to specify the receiving object or email address.");
+    }
+
+    $to_application_email = id(new PhabricatorMetaMTAApplicationEmailQuery())
+      ->setViewer($this->getViewer())
+      ->withAddresses(array($to))
+      ->executeOne();
+
     $as = $args->getArg('as');
+    if (!$as && $to_application_email) {
+      $default_phid = $to_application_email->getConfigValue(
+        PhabricatorMetaMTAApplicationEmail::CONFIG_DEFAULT_AUTHOR);
+      if ($default_phid) {
+        $default_user = id(new PhabricatorPeopleQuery())
+          ->setViewer($this->getViewer())
+          ->withPHIDs(array($default_phid))
+          ->executeOne();
+        if ($default_user) {
+          $as = $default_user->getUsername();
+        }
+      }
+    }
+
     if (!$as) {
       throw new PhutilArgumentUsageException(
         pht("Use '--as' to specify the acting user."));
@@ -50,11 +75,6 @@ final class PhabricatorMailManagementReceiveTestWorkflow
         pht("No such user '%s' exists.", $as));
     }
 
-    $to = $args->getArg('to');
-    if (!$to) {
-      throw new PhutilArgumentUsageException(
-        "Use '--to' to specify the receiving object or email address.");
-    }
 
     $from = $args->getArg('from');
     if (!$from) {
@@ -136,7 +156,7 @@ final class PhabricatorMailManagementReceiveTestWorkflow
 
     $console->writeErr(
       "%s\n\n    phabricator/ $ ./bin/mail show-inbound --id %d\n\n",
-      pht("Mail received! You can view details by running this command:"),
+      pht('Mail received! You can view details by running this command:'),
       $received->getID());
   }
 

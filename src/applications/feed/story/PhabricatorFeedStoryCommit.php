@@ -38,19 +38,18 @@ final class PhabricatorFeedStoryCommit extends PhabricatorFeedStory {
 
     if ($author) {
       $title = pht(
-        "%s committed %s (authored by %s)",
+        '%s committed %s (authored by %s)',
         $committer,
         $commit,
         $author);
     } else {
       $title = pht(
-        "%s committed %s",
+        '%s committed %s',
         $committer,
         $commit);
     }
 
     $view = $this->newStoryView();
-    $view->setAppIcon('differential-dark');
 
     $view->setTitle($title);
 
@@ -90,10 +89,16 @@ final class PhabricatorFeedStoryCommit extends PhabricatorFeedStory {
     }
 
     if ($author) {
-      $text = "{$committer} (authored by {$author})".
-              "committed {$commit_name} {$commit_uri}";
+      $text = pht(
+        '%s committed %s (authored by %s).',
+        $committer,
+        $commit_name,
+        $author);
     } else {
-      $text = "{$committer} committed {$commit_name} {$commit_uri}";
+      $text = pht(
+        '%s committed %s.',
+        $committer,
+        $commit_name);
     }
 
     return $text;

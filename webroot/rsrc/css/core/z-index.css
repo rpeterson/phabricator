@@ -2,6 +2,10 @@
  * @provides phabricator-zindex-css
  */
 
+.phabricator-nav-column-background {
+  z-index: -1;
+}
+
 .keyboard-focus-focus-reticle {
   z-index: 1;
 }
@@ -34,7 +38,7 @@
   z-index: 3;
 }
 
-.phabricator-nav-column-background {
+.phui-crumbs-view {
   z-index: 3;
 }
 
@@ -67,8 +71,8 @@
   z-index: 5;
 }
 
-.phabricator-crumbs-view {
-  z-index: 3;
+.phui-calendar-date-number  {
+  z-index: 5;
 }
 
 .phabricator-main-menu {
@@ -80,22 +84,6 @@
   z-index: 6;
 }
 
-.jx-notification-container {
-  z-index: 7;
-}
-
-.fancy-datepicker {
-  z-index: 7;
-}
-
-.calendar-button {
-  z-index: 8;
-}
-
-div.jx-typeahead-results {
-  z-index: 8;
-}
-
 .differential-haunt-mode-1 .differential-add-comment-panel,
 .differential-haunt-mode-2 .differential-add-comment-panel {
   z-index: 8;
@@ -105,8 +93,16 @@ div.jx-typeahead-results {
   z-index: 9;
 }
 
+.jx-scrollbar-bar {
+  z-index: 9;
+}
+
 .jx-mask {
   z-index: 10;
+}
+
+.jx-notification-container {
+  z-index: 11;
 }
 
 .phabricator-global-upload-instructions {
@@ -117,23 +113,31 @@ div.jx-typeahead-results {
   z-index: 12;
 }
 
+div.jx-typeahead-results {
+  z-index: 13;
+}
+
 .jx-client-dialog {
   z-index: 14;
 }
 
-.jx-hovercard-container {
+.fancy-datepicker {
+  z-index: 15;
+}
+
+.calendar-button {
   z-index: 16;
 }
 
-.jx-tooltip-container {
-  z-index: 18;
+.jx-hovercard-container {
+  z-index: 17;
 }
 
 .pholio-device-lightbox {
   z-index: 20;
 }
 
-.dropdown-menu-frame {
+.phuix-dropdown-menu {
   z-index: 32;
 }
 
@@ -143,4 +147,12 @@ div.jx-typeahead-results {
 
 .remarkup-control-fullscreen-mode {
   z-index: 50;
+}
+
+.jx-tooltip-container {
+  z-index: 51;
+}
+
+.audible .aural-only {
+  z-index: 100;
 }

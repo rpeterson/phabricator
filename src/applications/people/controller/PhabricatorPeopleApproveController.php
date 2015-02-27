@@ -31,8 +31,7 @@ final class PhabricatorPeopleApproveController
 
       $title = pht(
         'Phabricator Account "%s" Approved',
-        $user->getUsername(),
-        $admin->getUsername());
+        $user->getUsername());
 
       $body = pht(
         "Your Phabricator account (%s) has been approved by %s. You can ".
@@ -45,6 +44,7 @@ final class PhabricatorPeopleApproveController
         ->addTos(array($user->getPHID()))
         ->addCCs(array($admin->getPHID()))
         ->setSubject('[Phabricator] '.$title)
+        ->setForceDelivery(true)
         ->setBody($body)
         ->saveAndSend();
 

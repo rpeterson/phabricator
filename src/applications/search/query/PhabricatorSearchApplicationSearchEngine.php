@@ -3,6 +3,14 @@
 final class PhabricatorSearchApplicationSearchEngine
   extends PhabricatorApplicationSearchEngine {
 
+  public function getResultTypeDescription() {
+    return pht('Fulltext Results');
+  }
+
+  public function getApplicationClassName() {
+    return 'PhabricatorSearchApplication';
+  }
+
   public function buildSavedQueryFromRequest(AphrontRequest $request) {
     $saved = new PhabricatorSavedQuery();
 
@@ -96,7 +104,7 @@ final class PhabricatorSearchApplicationSearchEngine
     $type_values = $saved->getParameter('types', array());
     $type_values = array_fuse($type_values);
 
-    $types = self::getIndexableDocumentTypes();
+    $types = self::getIndexableDocumentTypes($this->requireViewer());
 
     $types_control = id(new AphrontFormCheckboxControl())
       ->setLabel(pht('Document Types'));
@@ -128,13 +136,13 @@ final class PhabricatorSearchApplicationSearchEngine
         id(new AphrontFormTokenizerControl())
           ->setName('authorPHIDs')
           ->setLabel('Authors')
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource(new PhabricatorPeopleDatasource())
           ->setValue($author_handles))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setName('ownerPHIDs')
           ->setLabel('Owners')
-          ->setDatasource('/typeahead/common/searchowner/')
+          ->setDatasource(new PhabricatorTypeaheadOwnerDatasource())
           ->setValue($owner_handles))
       ->appendChild(
         id(new AphrontFormCheckboxControl())
@@ -147,13 +155,13 @@ final class PhabricatorSearchApplicationSearchEngine
         id(new AphrontFormTokenizerControl())
           ->setName('subscriberPHIDs')
           ->setLabel('Subscribers')
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource(new PhabricatorPeopleDatasource())
           ->setValue($subscriber_handles))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setName('projectPHIDs')
           ->setLabel('In Any Project')
-          ->setDatasource('/typeahead/common/projects/')
+          ->setDatasource(new PhabricatorProjectDatasource())
           ->setValue($project_handles));
   }
 
@@ -161,18 +169,15 @@ final class PhabricatorSearchApplicationSearchEngine
     return '/search/'.$path;
   }
 
-  public function getBuiltinQueryNames() {
-    $names = array(
+  protected function getBuiltinQueryNames() {
+    return array(
       'all' => pht('All Documents'),
       'open' => pht('Open Documents'),
       'open-tasks' => pht('Open Tasks'),
     );
-
-    return $names;
   }
 
   public function buildSavedQueryFromBuiltin($query_key) {
-
     $query = $this->newSavedQuery();
     $query->setQueryKey($query_key);
 
@@ -184,24 +189,27 @@ final class PhabricatorSearchApplicationSearchEngine
       case 'open-tasks':
         return $query
           ->setParameter('statuses', array('open'))
-          ->setParameter('types', array(ManiphestPHIDTypeTask::TYPECONST));
+          ->setParameter('types', array(ManiphestTaskPHIDType::TYPECONST));
     }
 
     return parent::buildSavedQueryFromBuiltin($query_key);
   }
 
-  public static function getIndexableDocumentTypes() {
+  public static function getIndexableDocumentTypes(
+    PhabricatorUser $viewer = null) {
+
     // TODO: This is inelegant and not very efficient, but gets us reasonable
     // results. It would be nice to do this more elegantly.
-
-    // TODO: We should hide types associated with applications the user can
-    // not access. There's no reasonable way to do this right now.
 
     $indexers = id(new PhutilSymbolLoader())
       ->setAncestorClass('PhabricatorSearchDocumentIndexer')
       ->loadObjects();
 
-    $types = PhabricatorPHIDType::getAllTypes();
+    if ($viewer) {
+      $types = PhabricatorPHIDType::getAllInstalledTypes($viewer);
+    } else {
+      $types = PhabricatorPHIDType::getAllTypes();
+    }
 
     $results = array();
     foreach ($types as $type) {
@@ -216,8 +224,60 @@ final class PhabricatorSearchApplicationSearchEngine
 
     asort($results);
 
+    // Put tasks first, see T4606.
+    $results = array_select_keys(
+      $results,
+      array(
+        ManiphestTaskPHIDType::TYPECONST,
+      )) + $results;
+
     return $results;
   }
 
+  public function shouldUseOffsetPaging() {
+    return true;
+  }
+
+  protected function renderResultList(
+    array $results,
+    PhabricatorSavedQuery $query,
+    array $handles) {
+
+    $viewer = $this->requireViewer();
+
+    if ($results) {
+      $objects = id(new PhabricatorObjectQuery())
+        ->setViewer($viewer)
+        ->withPHIDs(mpull($results, 'getPHID'))
+        ->execute();
+
+      $output = array();
+      foreach ($results as $phid => $handle) {
+        $view = id(new PhabricatorSearchResultView())
+          ->setHandle($handle)
+          ->setQuery($query)
+          ->setObject(idx($objects, $phid));
+        $output[] = $view->render();
+      }
+
+      $results = phutil_tag_div(
+        'phabricator-search-result-list',
+        $output);
+    } else {
+      $results = phutil_tag_div(
+        'phabricator-search-result-list',
+        phutil_tag(
+          'p',
+          array('class' => 'phabricator-search-no-results'),
+          pht('No search results.')));
+    }
+
+    return id(new PHUIBoxView())
+      ->addMargin(PHUI::MARGIN_LARGE)
+      ->addPadding(PHUI::PADDING_LARGE)
+      ->setBorder(true)
+      ->appendChild($results)
+      ->addClass('phabricator-search-result-box');
+  }
 
 }

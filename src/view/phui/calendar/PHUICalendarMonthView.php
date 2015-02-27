@@ -9,6 +9,7 @@ final class PHUICalendarMonthView extends AphrontView {
   private $events   = array();
   private $browseURI;
   private $image;
+  private $error;
 
   public function setBrowseURI($browse_uri) {
     $this->browseURI = $browse_uri;
@@ -28,6 +29,11 @@ final class PHUICalendarMonthView extends AphrontView {
     return $this;
   }
 
+  public function setErrorView(PHUIErrorView $error) {
+    $this->error = $error;
+    return $this;
+  }
+
   public function setHolidays(array $holidays) {
     assert_instances_of($holidays, 'PhabricatorCalendarHoliday');
     $this->holidays = mpull($holidays, null, 'getDay');
@@ -42,7 +48,7 @@ final class PHUICalendarMonthView extends AphrontView {
 
   public function render() {
     if (empty($this->user)) {
-      throw new Exception("Call setUser() before render()!");
+      throw new Exception('Call setUser() before render()!');
     }
 
     $events = msort($this->events, 'getEpochStart');
@@ -150,7 +156,8 @@ final class PHUICalendarMonthView extends AphrontView {
           $cells[] = phutil_tag(
             'td',
             array(
-              'class' => 'phui-calendar-month-weekstart'),
+              'class' => 'phui-calendar-month-weekstart',
+            ),
             $cell);
         } else {
           $cells[] = phutil_tag('td', array(), $cell);
@@ -184,6 +191,10 @@ final class PHUICalendarMonthView extends AphrontView {
     $box = id(new PHUIObjectBoxView())
       ->setHeader($this->renderCalendarHeader($first))
       ->appendChild($table);
+    if ($this->error) {
+      $box->setErrorView($this->error);
+
+    }
 
     return $box;
   }
@@ -206,8 +217,7 @@ final class PHUICalendarMonthView extends AphrontView {
       $button_bar = new PHUIButtonBarView();
 
       $left_icon = id(new PHUIIconView())
-          ->setSpriteSheet(PHUIIconView::SPRITE_BUTTONBAR)
-          ->setSpriteIcon('chevron-left');
+          ->setIconFont('fa-chevron-left bluegrey');
       $left = id(new PHUIButtonView())
         ->setTag('a')
         ->setColor(PHUIButtonView::GREY)
@@ -216,8 +226,7 @@ final class PHUICalendarMonthView extends AphrontView {
         ->setIcon($left_icon);
 
       $right_icon = id(new PHUIIconView())
-          ->setSpriteSheet(PHUIIconView::SPRITE_BUTTONBAR)
-          ->setSpriteIcon('chevron-right');
+          ->setIconFont('fa-chevron-right bluegrey');
       $right = id(new PHUIButtonView())
         ->setTag('a')
         ->setColor(PHUIButtonView::GREY)

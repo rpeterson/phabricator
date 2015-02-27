@@ -23,7 +23,7 @@ final class PhabricatorXHProfProfileController
     $data = $file->loadFileData();
     $data = @json_decode($data, true);
     if (!$data) {
-      throw new Exception("Failed to unserialize XHProf profile!");
+      throw new Exception('Failed to unserialize XHProf profile!');
     }
 
     $symbol = $request->getStr('symbol');
@@ -43,10 +43,13 @@ final class PhabricatorXHProfProfileController
     $view->setIsFramed($is_framed);
     $view->setProfileData($data);
 
+    $crumbs = $this->buildApplicationCrumbs();
+    $crumbs->addTextCrumb(pht('%s Profile', $symbol));
+
     return $this->buildStandardPageResponse(
-      $view,
+      array($crumbs, $view),
       array(
-        'title' => 'Profile',
+        'title' => pht('Profile'),
         'frame' => $is_framed,
       ));
   }

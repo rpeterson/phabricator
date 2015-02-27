@@ -6,7 +6,7 @@ abstract class PhabricatorRepositoryCommitChangeParserWorker
   public function getRequiredLeaseTime() {
     // It can take a very long time to parse commits; some commits in the
     // Facebook repository affect many millions of paths. Acquire 24h leases.
-    return 60 * 60 * 24;
+    return phutil_units('24 hours in seconds');
   }
 
   abstract protected function parseCommitChanges(
@@ -23,7 +23,7 @@ abstract class PhabricatorRepositoryCommitChangeParserWorker
 
     $this->log("Parsing %s...\n", $full_name);
     if ($this->isBadCommit($full_name)) {
-      $this->log("This commit is marked bad!");
+      $this->log('This commit is marked bad!');
       return;
     }
 
@@ -96,9 +96,11 @@ abstract class PhabricatorRepositoryCommitChangeParserWorker
     id(new PhabricatorSearchIndexer())
       ->queueDocumentForIndexing($commit->getPHID());
 
-    PhabricatorOwnersPackagePathValidator::updateOwnersPackagePaths($commit);
+    PhabricatorOwnersPackagePathValidator::updateOwnersPackagePaths(
+      $commit,
+      PhabricatorUser::getOmnipotentUser());
     if ($this->shouldQueueFollowupTasks()) {
-      PhabricatorWorker::scheduleTask(
+      $this->queueTask(
         'PhabricatorRepositoryCommitOwnersWorker',
         array(
           'commitID' => $commit->getID(),

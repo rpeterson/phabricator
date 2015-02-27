@@ -39,6 +39,7 @@ final class DifferentialSummaryField
 
   public function renderEditControl(array $handles) {
     return id(new PhabricatorRemarkupControl())
+      ->setUser($this->getViewer())
       ->setName($this->getFieldKey())
       ->setValue($this->getValue())
       ->setError($this->getFieldError())
@@ -57,8 +58,7 @@ final class DifferentialSummaryField
   }
 
   public function getApplicationTransactionTitleForFeed(
-    PhabricatorApplicationTransaction $xaction,
-    PhabricatorFeedStory $story) {
+    PhabricatorApplicationTransaction $xaction) {
 
     $object_phid = $xaction->getObjectPHID();
     $author_phid = $xaction->getAuthorPHID();
@@ -145,6 +145,27 @@ final class DifferentialSummaryField
 
   public function shouldOverwriteWhenCommitMessageIsEdited() {
     return true;
+  }
+
+  public function shouldAppearInTransactionMail() {
+    return true;
+  }
+
+  public function updateTransactionMailBody(
+    PhabricatorMetaMTAMailBody $body,
+    PhabricatorApplicationTransactionEditor $editor,
+    array $xactions) {
+
+    if (!$editor->getIsNewObject()) {
+      return;
+    }
+
+    $summary = $this->getValue();
+    if (!strlen(trim($summary))) {
+      return;
+    }
+
+    $body->addTextSection(pht('REVISION SUMMARY'), $summary);
   }
 
 }

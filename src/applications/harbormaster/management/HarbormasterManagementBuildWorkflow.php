@@ -3,7 +3,7 @@
 final class HarbormasterManagementBuildWorkflow
   extends HarbormasterManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('build')
       ->setExamples('**build** [__options__] __buildable__ --plan __id__')
@@ -28,7 +28,7 @@ final class HarbormasterManagementBuildWorkflow
     $names = $args->getArg('buildable');
     if (count($names) != 1) {
       throw new PhutilArgumentUsageException(
-        pht('Specify exactly one buildable, by object name.'));
+        pht('Specify exactly one buildable object, by object name.'));
     }
 
     $name = head($names);

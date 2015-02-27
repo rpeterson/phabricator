@@ -29,20 +29,26 @@ a name, description, and set of bloggers who can add posts to the blog.
 Each blogger can also edit metadata about the blog and delete the blog
 outright.
 
-Soon, blogs will be useful for powering external websites, like
-
-  blog.yourcompany.com
-
-by making pertinent configuration changes with your DNS authority and
-Phabricator instance.
-
 NOTE: removing a blogger from a given blog does not remove their posts that
 are already associated with the blog. Rather, it removes their ability to edit
 metadata about and add posts to the blog.
 
+Blogs can be useful for powering external websites, like
+
+  blog.yourcompany.com
+
+by making pertinent configuration changes with your DNS authority and
+Phabricator instance. For the Phabricator instance, you must
+
+ - Enable `policy.allow-public` in Phabricator configuration.
+ - Configure the blog to have the view policy `public`.
+
+For your DNS authority, simply point the pertinent domain name at your
+Phabricator instance. e.g. by IP address.
+
 = Comment Widgets =
 
-Phame supports comment widgets from Facebook and Disqus. The adminstrator
+Phame supports comment widgets from Facebook and Disqus. The administrator
 of the Phabricator instance must properly configure Phabricator to enable
 this functionality.
 
@@ -53,4 +59,5 @@ of whether that post is being viewed in the context of a blog.
 = Next Steps =
 
  - Phame is extremely new and very basic for now. Give us feedback on
-what you'd like to see improve! See @{article:Give Feedback! Get Support!}.
+   what you'd like to see improve! See @{article:Give Feedback! Get
+   Support!}.

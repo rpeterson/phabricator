@@ -3,7 +3,7 @@
 final class PhabricatorRepositoryManagementMarkImportedWorkflow
   extends PhabricatorRepositoryManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('mark-imported')
       ->setExamples('**mark-imported** __repository__ ...')
@@ -26,7 +26,7 @@ final class PhabricatorRepositoryManagementMarkImportedWorkflow
 
     if (!$repos) {
       throw new PhutilArgumentUsageException(
-        "Specify one or more repositories to mark imported, by callsign.");
+        'Specify one or more repositories to mark imported, by callsign.');
     }
 
     $new_importing_value = (bool)$args->getArg('mark-not-imported');

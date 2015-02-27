@@ -2,14 +2,14 @@
 
 abstract class HarbormasterController extends PhabricatorController {
 
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setName(pht('New Build Plan'))
         ->setHref($this->getApplicationURI('plan/edit/'))
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }

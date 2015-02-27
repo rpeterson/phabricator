@@ -52,6 +52,7 @@ final class PhabricatorRepositoryPullEngine
         break;
       default:
         $this->abortPull(pht('Unknown VCS "%s"!', $vcs));
+        break;
     }
 
     $callsign = $repository->getCallsign();
@@ -88,6 +89,7 @@ final class PhabricatorRepositoryPullEngine
               "Updating the working copy for repository '%s'.",
               $callsign));
           if ($is_git) {
+            $this->verifyGitOrigin($repository);
             $this->executeGitUpdate();
           } else if ($is_hg) {
             $this->executeMercurialUpdate();
@@ -151,7 +153,7 @@ final class PhabricatorRepositoryPullEngine
       PhabricatorRepositoryStatusMessage::TYPE_INIT,
       $code,
       array(
-        'message' => $message
+        'message' => $message,
       ));
   }
 
@@ -159,7 +161,7 @@ final class PhabricatorRepositoryPullEngine
     $this->log('%s', pht('Installing commit hook to "%s"...', $path));
 
     $repository = $this->getRepository();
-    $callsign = $repository->getCallsign();
+    $identifier = $this->getHookContextIdentifier($repository);
 
     $root = dirname(phutil_get_library_root('phabricator'));
     $bin = $root.'/bin/commit-hook';
@@ -169,9 +171,9 @@ final class PhabricatorRepositoryPullEngine
       'exec %s -f %s -- %s "$@"',
       $full_php_path,
       $bin,
-      $callsign);
+      $identifier);
 
-    $hook = "#!/bin/sh\n{$cmd}\n";
+    $hook = "#!/bin/sh\nexport TERM=dumb\n{$cmd}\n";
 
     Filesystem::writeFile($path, $hook);
     Filesystem::changePermissions($path, 0755);
@@ -186,6 +188,17 @@ final class PhabricatorRepositoryPullEngine
 
     Filesystem::createDirectory($path, 0755);
     Filesystem::writeFile($path.'/README', $readme);
+  }
+
+  private function getHookContextIdentifier(PhabricatorRepository $repository) {
+    $identifier = $repository->getCallsign();
+
+    $instance = PhabricatorEnv::getEnvConfig('cluster.instance');
+    if (strlen($instance)) {
+      $identifier = "{$identifier}:{$instance}";
+    }
+
+    return $identifier;
   }
 
 
@@ -384,7 +397,7 @@ final class PhabricatorRepositoryPullEngine
       // This behavior has been reverted, but users who updated between Feb 1,
       // 2012 and Mar 1, 2012 will have the erroring version. Do a dumb test
       // against stdout to check for this possibility.
-      // See: https://github.com/facebook/phabricator/issues/101/
+      // See: https://github.com/phacility/phabricator/issues/101/
 
       // NOTE: Mercurial has translated versions, which translate this error
       // string. In a translated version, the string will be something else,
@@ -410,6 +423,8 @@ final class PhabricatorRepositoryPullEngine
     $repository = $this->getRepository();
     $path = $repository->getLocalPath().'/.hg/hgrc';
 
+    $identifier = $this->getHookContextIdentifier($repository);
+
     $root = dirname(phutil_get_library_root('phabricator'));
     $bin = $root.'/bin/commit-hook';
 
@@ -420,14 +435,14 @@ final class PhabricatorRepositoryPullEngine
     $data[] = csprintf(
       'pretxnchangegroup.phabricator = %s %s %s',
       $bin,
-      $repository->getCallsign(),
+      $identifier,
       'pretxnchangegroup');
 
     // This one handles creating bookmarks.
     $data[] = csprintf(
       'prepushkey.phabricator = %s %s %s',
       $bin,
-      $repository->getCallsign(),
+      $identifier,
       'prepushkey');
 
     $data[] = null;

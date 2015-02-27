@@ -1,7 +1,6 @@
 <?php
 
-final class HarbormasterPlanRunController
-  extends HarbormasterController {
+final class HarbormasterPlanRunController extends HarbormasterController {
 
   private $id;
 
@@ -14,7 +13,7 @@ final class HarbormasterPlanRunController
     $viewer = $request->getUser();
 
     $this->requireApplicationCapability(
-      HarbormasterCapabilityManagePlans::CAPABILITY);
+      HarbormasterManagePlansCapability::CAPABILITY);
 
     $plan_id = $this->id;
     $plan = id(new HarbormasterBuildPlanQuery())
@@ -64,7 +63,7 @@ final class HarbormasterPlanRunController
     }
 
     if ($errors) {
-      $errors = id(new AphrontErrorView())->setErrors($errors);
+      $errors = id(new PHUIErrorView())->setErrors($errors);
     }
 
     $title = pht('Run Build Plan Manually');

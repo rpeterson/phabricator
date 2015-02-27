@@ -8,7 +8,11 @@ final class DifferentialRevision extends DifferentialDAO
     PhrequentTrackableInterface,
     HarbormasterBuildableInterface,
     PhabricatorSubscribableInterface,
-    PhabricatorCustomFieldInterface {
+    PhabricatorCustomFieldInterface,
+    PhabricatorApplicationTransactionInterface,
+    PhabricatorMentionableInterface,
+    PhabricatorDestructibleInterface,
+    PhabricatorProjectInterface {
 
   protected $title = '';
   protected $originalTitle;
@@ -50,11 +54,11 @@ final class DifferentialRevision extends DifferentialDAO
   public static function initializeNewRevision(PhabricatorUser $actor) {
     $app = id(new PhabricatorApplicationQuery())
       ->setViewer($actor)
-      ->withClasses(array('PhabricatorApplicationDifferential'))
+      ->withClasses(array('PhabricatorDifferentialApplication'))
       ->executeOne();
 
     $view_policy = $app->getPolicy(
-      DifferentialCapabilityDefaultView::CAPABILITY);
+      DifferentialDefaultViewCapability::CAPABILITY);
 
     return id(new DifferentialRevision())
       ->setViewPolicy($view_policy)
@@ -63,12 +67,39 @@ final class DifferentialRevision extends DifferentialDAO
       ->setStatus(ArcanistDifferentialRevisionStatus::NEEDS_REVIEW);
   }
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_SERIALIZATION => array(
         'attached'      => self::SERIALIZATION_JSON,
         'unsubscribed'  => self::SERIALIZATION_JSON,
+      ),
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'title' => 'text255',
+        'originalTitle' => 'text255',
+        'status' => 'text32',
+        'summary' => 'text',
+        'testPlan' => 'text',
+        'authorPHID' => 'phid?',
+        'lastReviewerPHID' => 'phid?',
+        'lineCount' => 'uint32?',
+        'mailKey' => 'bytes40',
+        'branchName' => 'text255?',
+        'arcanistProjectPHID' => 'phid?',
+        'repositoryPHID' => 'phid?',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'authorPHID' => array(
+          'columns' => array('authorPHID', 'status'),
+        ),
+        'repositoryPHID' => array(
+          'columns' => array('repositoryPHID'),
+        ),
       ),
     ) + parent::getConfiguration();
   }
@@ -157,7 +188,7 @@ final class DifferentialRevision extends DifferentialDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      DifferentialPHIDTypeRevision::TYPECONST);
+      DifferentialRevisionPHIDType::TYPECONST);
   }
 
   public function loadActiveDiff() {
@@ -173,45 +204,6 @@ final class DifferentialRevision extends DifferentialDAO
     return parent::save();
   }
 
-  public function delete() {
-    $this->openTransaction();
-    $diffs = id(new DifferentialDiffQuery())
-      ->setViewer(PhabricatorUser::getOmnipotentUser())
-      ->withRevisionIDs(array($this->getID()))
-      ->execute();
-      foreach ($diffs as $diff) {
-        $diff->delete();
-      }
-
-      $conn_w = $this->establishConnection('w');
-
-      queryfx(
-        $conn_w,
-        'DELETE FROM %T WHERE revisionID = %d',
-        self::TABLE_COMMIT,
-        $this->getID());
-
-      $inlines = id(new DifferentialInlineCommentQuery())
-        ->withRevisionIDs(array($this->getID()))
-        ->execute();
-      foreach ($inlines as $inline) {
-        $inline->delete();
-      }
-
-      // we have to do paths a little differentally as they do not have
-      // an id or phid column for delete() to act on
-      $dummy_path = new DifferentialAffectedPath();
-      queryfx(
-        $conn_w,
-        'DELETE FROM %T WHERE revisionID = %d',
-        $dummy_path->getTableName(),
-        $this->getID());
-
-      $result = parent::delete();
-    $this->saveTransaction();
-    return $result;
-  }
-
   public function loadRelationships() {
     if (!$this->getID()) {
       $this->relationships = array();
@@ -222,7 +214,7 @@ final class DifferentialRevision extends DifferentialDAO
 
     $subscriber_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
       $this->getPHID(),
-      PhabricatorEdgeConfig::TYPE_OBJECT_HAS_SUBSCRIBER);
+      PhabricatorObjectHasSubscriberEdgeType::EDGECONST);
     $subscriber_phids = array_reverse($subscriber_phids);
     foreach ($subscriber_phids as $phid) {
       $data[] = array(
@@ -234,7 +226,7 @@ final class DifferentialRevision extends DifferentialDAO
 
     $reviewer_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
       $this->getPHID(),
-      PhabricatorEdgeConfig::TYPE_DREV_HAS_REVIEWER);
+      DifferentialRevisionHasReviewerEdgeType::EDGECONST);
     $reviewer_phids = array_reverse($reviewer_phids);
     foreach ($reviewer_phids as $phid) {
       $data[] = array(
@@ -288,6 +280,44 @@ final class DifferentialRevision extends DifferentialDAO
     return $this;
   }
 
+  public function loadInlineComments(
+    array &$changesets) {
+    assert_instances_of($changesets, 'DifferentialChangeset');
+
+    $inline_comments = array();
+
+    $inline_comments = id(new DifferentialInlineCommentQuery())
+      ->withRevisionIDs(array($this->getID()))
+      ->withNotDraft(true)
+      ->execute();
+
+    $load_changesets = array();
+    foreach ($inline_comments as $inline) {
+      $changeset_id = $inline->getChangesetID();
+      if (isset($changesets[$changeset_id])) {
+        continue;
+      }
+      $load_changesets[$changeset_id] = true;
+    }
+
+    $more_changesets = array();
+    if ($load_changesets) {
+      $changeset_ids = array_keys($load_changesets);
+      $more_changesets += id(new DifferentialChangeset())
+        ->loadAllWhere(
+          'id IN (%Ld)',
+          $changeset_ids);
+    }
+
+    if ($more_changesets) {
+      $changesets += $more_changesets;
+      $changesets = msort($changesets, 'getSortKey');
+    }
+
+    return $inline_comments;
+  }
+
+
   public function getCapabilities() {
     return array(
       PhabricatorPolicyCapability::CAN_VIEW,
@@ -305,7 +335,6 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
   public function hasAutomaticCapability($capability, PhabricatorUser $user) {
-
     // A revision's author (which effectively means "owner" after we added
     // commandeering) can always view and edit it.
     $author_phid = $this->getAuthorPHID();
@@ -398,6 +427,14 @@ final class DifferentialRevision extends DifferentialDAO
     return $this->getPHID();
   }
 
+  public function getBuildVariables() {
+    return array();
+  }
+
+  public function getAvailableBuildVariables() {
+    return array();
+  }
+
 
 /* -(  PhabricatorSubscribableInterface  )----------------------------------- */
 
@@ -458,6 +495,103 @@ final class DifferentialRevision extends DifferentialDAO
   public function attachCustomFields(PhabricatorCustomFieldAttachment $fields) {
     $this->customFields = $fields;
     return $this;
+  }
+
+
+/* -(  PhabricatorApplicationTransactionInterface  )------------------------- */
+
+
+  public function getApplicationTransactionEditor() {
+    return new DifferentialTransactionEditor();
+  }
+
+  public function getApplicationTransactionObject() {
+    return $this;
+  }
+
+  public function getApplicationTransactionTemplate() {
+    return new DifferentialTransaction();
+  }
+
+  public function willRenderTimeline(
+    PhabricatorApplicationTransactionView $timeline,
+    AphrontRequest $request) {
+
+    $render_data = $timeline->getRenderData();
+    $left = $request->getInt('left', idx($render_data, 'left'));
+    $right = $request->getInt('right', idx($render_data, 'right'));
+
+    $diffs = id(new DifferentialDiffQuery())
+      ->setViewer($request->getUser())
+      ->withIDs(array($left, $right))
+      ->execute();
+    $diffs = mpull($diffs, null, 'getID');
+    $left_diff = $diffs[$left];
+    $right_diff = $diffs[$right];
+
+    $changesets = id(new DifferentialChangesetQuery())
+      ->setViewer($request->getUser())
+      ->withDiffs(array($right_diff))
+      ->execute();
+    // NOTE: this mutates $changesets to include changesets for all inline
+    // comments...!
+    $inlines = $this->loadInlineComments($changesets);
+    $changesets = mpull($changesets, null, 'getID');
+
+    return $timeline
+      ->setChangesets($changesets)
+      ->setRevision($this)
+      ->setLeftDiff($left_diff)
+      ->setRightDiff($right_diff);
+  }
+
+
+/* -(  PhabricatorDestructibleInterface  )----------------------------------- */
+
+
+  public function destroyObjectPermanently(
+    PhabricatorDestructionEngine $engine) {
+
+    $this->openTransaction();
+      $diffs = id(new DifferentialDiffQuery())
+        ->setViewer(PhabricatorUser::getOmnipotentUser())
+        ->withRevisionIDs(array($this->getID()))
+        ->execute();
+      foreach ($diffs as $diff) {
+        $engine->destroyObject($diff);
+      }
+
+      $conn_w = $this->establishConnection('w');
+
+      queryfx(
+        $conn_w,
+        'DELETE FROM %T WHERE revisionID = %d',
+        self::TABLE_COMMIT,
+        $this->getID());
+
+      try {
+        $inlines = id(new DifferentialInlineCommentQuery())
+          ->withRevisionIDs(array($this->getID()))
+          ->execute();
+        foreach ($inlines as $inline) {
+          $inline->delete();
+        }
+      } catch (PhabricatorEmptyQueryException $ex) {
+        // TODO: There's still some funky legacy wrapping going on here, and
+        // we might catch a raw query exception.
+      }
+
+      // we have to do paths a little differentally as they do not have
+      // an id or phid column for delete() to act on
+      $dummy_path = new DifferentialAffectedPath();
+      queryfx(
+        $conn_w,
+        'DELETE FROM %T WHERE revisionID = %d',
+        $dummy_path->getTableName(),
+        $this->getID());
+
+      $this->delete();
+    $this->saveTransaction();
   }
 
 }

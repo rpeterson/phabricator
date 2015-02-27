@@ -3,7 +3,7 @@
 final class PhabricatorFilesManagementPurgeWorkflow
   extends PhabricatorFilesManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('purge')
       ->setSynopsis('Delete files with missing data.')
@@ -30,8 +30,8 @@ final class PhabricatorFilesManagementPurgeWorkflow
     $iterator = $this->buildIterator($args);
     if (!$iterator) {
       throw new PhutilArgumentUsageException(
-        "Either specify a list of files to purge, or use `--all` ".
-        "to purge all files.");
+        'Either specify a list of files to purge, or use `--all` '.
+        'to purge all files.');
     }
 
     $is_dry_run = $args->getArg('dry-run');

@@ -1,12 +1,10 @@
 <?php
 
-/**
- * @group conduit
- */
 final class ConduitAPIRequest {
 
   protected $params;
   private $user;
+  private $isClusterRequest = false;
 
   public function __construct(array $params) {
     $this->params = $params;
@@ -38,11 +36,20 @@ final class ConduitAPIRequest {
   public function getUser() {
     if (!$this->user) {
       throw new Exception(
-        "You can not access the user inside the implementation of a Conduit ".
-        "method which does not require authentication (as per ".
-        "shouldRequireAuthentication()).");
+        'You can not access the user inside the implementation of a Conduit '.
+        'method which does not require authentication (as per '.
+        'shouldRequireAuthentication()).');
     }
     return $this->user;
+  }
+
+  public function setIsClusterRequest($is_cluster_request) {
+    $this->isClusterRequest = $is_cluster_request;
+    return $this;
+  }
+
+  public function getIsClusterRequest() {
+    return $this->isClusterRequest;
   }
 
 }

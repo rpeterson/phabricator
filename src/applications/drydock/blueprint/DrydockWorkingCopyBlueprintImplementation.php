@@ -40,9 +40,10 @@ final class DrydockWorkingCopyBlueprintImplementation
         "Lease is missing required 'repositoryID' attribute.");
     }
 
-    // TODO: (T603) Figure out the interaction between policies and
-    // Drydock.
-    $repository = id(new PhabricatorRepository())->load($repository_id);
+    $repository = id(new PhabricatorRepositoryQuery())
+      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->withIDs(array($repository_id))
+      ->executeOne();
 
     if (!$repository) {
       throw new Exception(
@@ -53,7 +54,7 @@ final class DrydockWorkingCopyBlueprintImplementation
       case PhabricatorRepositoryType::REPOSITORY_TYPE_GIT:
         break;
       default:
-        throw new Exception("Unsupported VCS!");
+        throw new Exception('Unsupported VCS!');
     }
 
     // TODO: Policy stuff here too.

@@ -5,7 +5,7 @@ final class NuanceRequestor
 
   protected $data;
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_SERIALIZATION => array(
@@ -16,7 +16,7 @@ final class NuanceRequestor
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      NuancePHIDTypeRequestor::TYPECONST);
+      NuanceRequestorPHIDType::TYPECONST);
   }
 
   public function save() {

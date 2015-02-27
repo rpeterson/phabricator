@@ -34,15 +34,26 @@ final class PhabricatorCalendarEvent
     return $options[$this->status];
   }
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'dateFrom' => 'epoch',
+        'dateTo' => 'epoch',
+        'status' => 'uint32',
+        'description' => 'text',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'userPHID_dateFrom' => array(
+          'columns' => array('userPHID', 'dateTo'),
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorCalendarPHIDTypeEvent::TYPECONST);
+      PhabricatorCalendarEventPHIDType::TYPECONST);
   }
 
   public function getTerseSummary(PhabricatorUser $viewer) {

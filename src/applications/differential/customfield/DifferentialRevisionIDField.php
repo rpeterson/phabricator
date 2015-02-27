@@ -3,6 +3,8 @@
 final class DifferentialRevisionIDField
   extends DifferentialCustomField {
 
+  private $revisionID;
+
   public function getFieldKey() {
     return 'differential:revision-id';
   }
@@ -29,34 +31,42 @@ final class DifferentialRevisionIDField
     return true;
   }
 
-  public function shouldAllowEditInCommitMessage() {
-    return false;
-  }
-
   public function parseValueFromCommitMessage($value) {
     return self::parseRevisionIDFromURI($value);
   }
 
   public function renderCommitMessageValue(array $handles) {
-    return PhabricatorEnv::getProductionURI('/D'.$this->getObject()->getID());
+    $id = coalesce($this->revisionID, $this->getObject()->getID());
+    if (!$id) {
+      return null;
+    }
+    return PhabricatorEnv::getProductionURI('/D'.$id);
   }
 
-  private static function parseRevisionIDFromURI($uri) {
-    $path = id(new PhutilURI($uri))->getPath();
+  public function readValueFromCommitMessage($value) {
+    $this->revisionID = $value;
+  }
+
+  private static function parseRevisionIDFromURI($uri_string) {
+    $uri = new PhutilURI($uri_string);
+    $path = $uri->getPath();
 
     $matches = null;
     if (preg_match('#^/D(\d+)$#', $path, $matches)) {
       $id = (int)$matches[1];
+
+      $prod_uri = new PhutilURI(PhabricatorEnv::getProductionURI('/D'.$id));
+
       // Make sure the URI is the same as our URI. Basically, we want to ignore
       // commits from other Phabricator installs.
-      if ($uri == PhabricatorEnv::getProductionURI('/D'.$id)) {
+      if ($uri->getDomain() == $prod_uri->getDomain()) {
         return $id;
       }
 
       $allowed_uris = PhabricatorEnv::getAllowedURIs('/D'.$id);
 
       foreach ($allowed_uris as $allowed_uri) {
-        if ($uri == $allowed_uri) {
+        if ($uri_string == $allowed_uri) {
           return $id;
         }
       }

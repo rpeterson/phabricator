@@ -34,7 +34,7 @@ final class PhragmentFragmentVersionQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhragmentFragmentVersion();
     $conn_r = $table->establishConnection('r');
 
@@ -118,6 +118,6 @@ final class PhragmentFragmentVersionQuery
   }
 
   public function getQueryApplicationClass() {
-    return 'PhabricatorApplicationPhragment';
+    return 'PhabricatorPhragmentApplication';
   }
 }

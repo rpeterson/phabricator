@@ -1,9 +1,8 @@
 <?php
 
-final class PhabricatorHomeMainController
-  extends PhabricatorHomeController {
+final class PhabricatorHomeMainController extends PhabricatorHomeController {
 
-  private $filter;
+  private $only;
   private $minipanels = array();
 
   public function shouldAllowPublic() {
@@ -11,31 +10,72 @@ final class PhabricatorHomeMainController
   }
 
   public function willProcessRequest(array $data) {
-    $this->filter = idx($data, 'filter');
+    $this->only = idx($data, 'only');
   }
 
   public function processRequest() {
     $user = $this->getRequest()->getUser();
 
-    if ($this->filter == 'jump') {
-      return $this->buildJumpResponse();
+    $dashboard = PhabricatorDashboardInstall::getDashboard(
+      $user,
+      $user->getPHID(),
+      get_class($this->getCurrentApplication()));
+
+    if (!$dashboard) {
+      $dashboard = PhabricatorDashboardInstall::getDashboard(
+        $user,
+        PhabricatorHomeApplication::DASHBOARD_DEFAULT,
+        get_class($this->getCurrentApplication()));
     }
 
-    $nav = $this->buildNav();
+    if ($dashboard) {
+      $content = id(new PhabricatorDashboardRenderingEngine())
+        ->setViewer($user)
+        ->setDashboard($dashboard)
+        ->renderDashboard();
+    } else {
+      $project_query = new PhabricatorProjectQuery();
+      $project_query->setViewer($user);
+      $project_query->withMemberPHIDs(array($user->getPHID()));
+      $projects = $project_query->execute();
 
-    $project_query = new PhabricatorProjectQuery();
-    $project_query->setViewer($user);
-    $project_query->withMemberPHIDs(array($user->getPHID()));
-    $projects = $project_query->execute();
+      $content = $this->buildMainResponse($projects);
+    }
 
-    return $this->buildMainResponse($nav, $projects);
+    if (!$this->only) {
+      $nav = $this->buildNav();
+      $nav->appendChild(
+        array(
+          $content,
+          id(new PhabricatorGlobalUploadTargetView())->setUser($user),
+        ));
+      $content = $nav;
+    }
+
+    return $this->buildApplicationPage(
+      $content,
+      array(
+        'title' => 'Phabricator',
+      ));
   }
 
-  private function buildMainResponse($nav, array $projects) {
+  private function buildMainResponse(array $projects) {
     assert_instances_of($projects, 'PhabricatorProject');
+    $viewer = $this->getRequest()->getUser();
 
-    $maniphest = 'PhabricatorApplicationManiphest';
-    if (PhabricatorApplication::isClassInstalled($maniphest)) {
+    $has_maniphest = PhabricatorApplication::isClassInstalledForViewer(
+      'PhabricatorManiphestApplication',
+      $viewer);
+
+    $has_audit = PhabricatorApplication::isClassInstalledForViewer(
+      'PhabricatorAuditApplication',
+      $viewer);
+
+    $has_differential = PhabricatorApplication::isClassInstalledForViewer(
+      'PhabricatorDifferentialApplication',
+      $viewer);
+
+    if ($has_maniphest) {
       $unbreak_panel = $this->buildUnbreakNowPanel();
       $triage_panel = $this->buildNeedsTriagePanel($projects);
       $tasks_panel = $this->buildTasksPanel();
@@ -45,8 +85,7 @@ final class PhabricatorHomeMainController
       $tasks_panel = null;
     }
 
-    $audit = 'PhabricatorApplicationAudit';
-    if (PhabricatorApplication::isClassInstalled($audit)) {
+    if ($has_audit) {
       $audit_panel = $this->buildAuditPanel();
       $commit_panel = $this->buildCommitPanel();
     } else {
@@ -60,53 +99,29 @@ final class PhabricatorHomeMainController
       $welcome_panel = null;
     }
 
-    $jump_panel = $this->buildJumpPanel();
-    $revision_panel = $this->buildRevisionPanel();
-
-    $content = array(
-      $jump_panel,
-      $welcome_panel,
-      $unbreak_panel,
-      $triage_panel,
-      $revision_panel,
-      $tasks_panel,
-      $audit_panel,
-      $commit_panel,
-      $this->minipanels,
-    );
-
-    $user = $this->getRequest()->getUser();
-    $nav->appendChild($content);
-    $nav->appendChild(id(new PhabricatorGlobalUploadTargetView())
-      ->setUser($user));
-
-    return $this->buildApplicationPage(
-      $nav,
-      array(
-        'title' => 'Phabricator',
-        'device' => true,
-      ));
-  }
-
-  private function buildJumpResponse() {
-    $request = $this->getRequest();
-    $jump = $request->getStr('jump');
-
-    $response = PhabricatorJumpNavHandler::getJumpResponse(
-      $request->getUser(),
-      $jump);
-
-    if ($response) {
-      return $response;
-    } else if ($request->isFormPost()) {
-      $uri = new PhutilURI('/search/');
-      $uri->setQueryParam('query', $jump);
-      $uri->setQueryParam('search:primary', 'true');
-
-      return id(new AphrontRedirectResponse())->setURI((string)$uri);
+    if ($has_differential) {
+      $revision_panel = $this->buildRevisionPanel();
     } else {
-      return id(new AphrontRedirectResponse())->setURI('/');
+      $revision_panel = null;
     }
+
+    require_celerity_resource('homepage-panel-css');
+    $home = phutil_tag(
+      'div',
+      array(
+        'class' => 'homepage-panel',
+      ),
+      array(
+        $welcome_panel,
+        $unbreak_panel,
+        $triage_panel,
+        $revision_panel,
+        $tasks_panel,
+        $audit_panel,
+        $commit_panel,
+        $this->minipanels,
+      ));
+      return $home;
   }
 
   private function buildUnbreakNowPanel() {
@@ -122,6 +137,7 @@ final class PhabricatorHomeMainController
       ->setViewer($user)
       ->withStatuses(ManiphestTaskStatus::getOpenStatusConstants())
       ->withPriorities(array($unbreak_now))
+      ->needProjectPHIDs(true)
       ->setLimit(10);
 
     $tasks = $task_query->execute();
@@ -132,12 +148,14 @@ final class PhabricatorHomeMainController
         'Nothing appears to be critically broken right now.');
     }
 
-    $href = '/maniphest/?statuses[]=0&priorities[]='.$unbreak_now.'#R';
+    $href = urisprintf(
+      '/maniphest/?statuses=%s&priorities=%s#R',
+      implode(',', ManiphestTaskStatus::getOpenStatusConstants()),
+      $unbreak_now);
     $title = pht('Unbreak Now!');
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
     $panel->appendChild($this->buildTaskListView($tasks));
-    $panel->setNoBackground();
 
     return $panel;
   }
@@ -162,6 +180,7 @@ final class PhabricatorHomeMainController
         ->withStatuses(ManiphestTaskStatus::getOpenStatusConstants())
         ->withPriorities(array($needs_triage))
         ->withAnyProjects(mpull($projects, 'getPHID'))
+        ->needProjectPHIDs(true)
         ->setLimit(10);
       $tasks = $task_query->execute();
     } else {
@@ -177,12 +196,14 @@ final class PhabricatorHomeMainController
     }
 
     $title = pht('Needs Triage');
-    $href = '/maniphest/?statuses[]=0&priorities[]='.$needs_triage.
-                    '&userProjects[]='.$user->getPHID().'#R';
-    $panel = new AphrontPanelView();
+    $href = urisprintf(
+      '/maniphest/?statuses=%s&priorities=%s&userProjects=%s#R',
+      implode(',', ManiphestTaskStatus::getOpenStatusConstants()),
+      $needs_triage,
+      $user->getPHID());
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
     $panel->appendChild($this->buildTaskListView($tasks));
-    $panel->setNoBackground();
 
     return $panel;
   }
@@ -213,7 +234,7 @@ final class PhabricatorHomeMainController
 
     $title = pht('Revisions Waiting on You');
     $href = '/differential';
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
 
     $revision_view = id(new DifferentialRevisionListView())
@@ -231,17 +252,16 @@ final class PhabricatorHomeMainController
     $list_view->setFlush(true);
 
     $panel->appendChild($list_view);
-    $panel->setNoBackground();
 
     return $panel;
   }
 
   private function buildWelcomePanel() {
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
+    $panel->setHeaderText(pht('Welcome'));
     $panel->appendChild(
       phutil_safe_html(
         PhabricatorEnv::getEnvConfig('welcome.html')));
-    $panel->setNoBackground();
 
     return $panel;
   }
@@ -255,6 +275,7 @@ final class PhabricatorHomeMainController
       ->withStatuses(ManiphestTaskStatus::getOpenStatusConstants())
       ->setGroupBy(ManiphestTaskQuery::GROUP_PRIORITY)
       ->withOwners(array($user_phid))
+      ->needProjectPHIDs(true)
       ->setLimit(10);
 
     $tasks = $task_query->execute();
@@ -268,10 +289,9 @@ final class PhabricatorHomeMainController
 
     $title = pht('Assigned Tasks');
     $href = '/maniphest';
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
     $panel->appendChild($this->buildTaskListView($tasks));
-    $panel->setNoBackground();
 
     return $panel;
   }
@@ -294,85 +314,21 @@ final class PhabricatorHomeMainController
     return $view;
   }
 
-  private function buildJumpPanel($query=null) {
-    $request = $this->getRequest();
-    $user = $request->getUser();
-
-    $uniq_id = celerity_generate_unique_node_id();
-
-    Javelin::initBehavior(
-      'phabricator-autofocus',
-      array(
-        'id' => $uniq_id,
-      ));
-
-    require_celerity_resource('phabricator-jump-nav');
-
-    $doc_href = PhabricatorEnv::getDocLink('article/Jump_Nav_User_Guide.html');
-    $doc_link = phutil_tag(
-      'a',
-      array(
-        'href' => $doc_href,
-      ),
-      'Jump Nav User Guide');
-
-    $jump_input = phutil_tag(
-      'input',
-      array(
-        'type'  => 'text',
-        'class' => 'phabricator-jump-nav',
-        'name'  => 'jump',
-        'id'    => $uniq_id,
-        'value' => $query,
-      ));
-    $jump_caption = phutil_tag(
-      'p',
-      array(
-        'class' => 'phabricator-jump-nav-caption',
-      ),
-      hsprintf(
-        'Enter the name of an object like <tt>D123</tt> to quickly jump to '.
-          'it. See %s or type <tt>help</tt>.',
-        $doc_link));
-
-    $form = phabricator_form(
-      $user,
-      array(
-        'action' => '/jump/',
-        'method' => 'POST',
-        'class'  => 'phabricator-jump-nav-form',
-      ),
-      array(
-        $jump_input,
-        $jump_caption,
-      ));
-
-    $panel = new AphrontPanelView();
-    $panel->setNoBackground();
-    // $panel->appendChild();
-
-    $list_filter = new AphrontListFilterView();
-    $list_filter->appendChild($form);
-
-    $container = phutil_tag('div',
-      array('class' => 'phabricator-jump-nav-container'),
-      $list_filter);
-
-    return $container;
-  }
-
   private function renderSectionHeader($title, $href) {
-    $header = phutil_tag(
+    $title = phutil_tag(
       'a',
       array(
         'href' => $href,
       ),
       $title);
+    $header = id(new PHUIHeaderView())
+      ->setHeader($title);
     return $header;
   }
 
   private function renderMiniPanel($title, $body) {
-    $panel = new AphrontMiniPanelView();
+    $panel = new PHUIErrorView();
+    $panel->setSeverity(PHUIErrorView::SEVERITY_NODATA);
     $panel->appendChild(
       phutil_tag(
         'p',
@@ -380,7 +336,7 @@ final class PhabricatorHomeMainController
         ),
         array(
           phutil_tag('strong', array(), $title.': '),
-          $body
+          $body,
         )));
     $this->minipanels[] = $panel;
   }
@@ -391,26 +347,26 @@ final class PhabricatorHomeMainController
 
     $phids = PhabricatorAuditCommentEditor::loadAuditPHIDsForUser($user);
 
-    $query = new PhabricatorAuditQuery();
-    $query->withAuditorPHIDs($phids);
-    $query->withStatus(PhabricatorAuditQuery::STATUS_OPEN);
-    $query->withAwaitingUser($user);
-    $query->needCommitData(true);
-    $query->setLimit(10);
+    $query = id(new DiffusionCommitQuery())
+      ->setViewer($user)
+      ->withAuditorPHIDs($phids)
+      ->withAuditStatus(DiffusionCommitQuery::AUDIT_STATUS_OPEN)
+      ->withAuditAwaitingUser($user)
+      ->needAuditRequests(true)
+      ->needCommitData(true)
+      ->setLimit(10);
 
-    $audits = $query->execute();
-    $commits = $query->getCommits();
+    $commits = $query->execute();
 
-    if (!$audits) {
+    if (!$commits) {
       return $this->renderMinipanel(
         'No Audits',
         'No commits are waiting for you to audit them.');
     }
 
-    $view = new PhabricatorAuditListView();
-    $view->setAudits($audits);
-    $view->setCommits($commits);
-    $view->setUser($user);
+    $view = id(new PhabricatorAuditListView())
+      ->setCommits($commits)
+      ->setUser($user);
 
     $phids = $view->getRequiredHandlePHIDs();
     $handles = $this->loadViewerHandles($phids);
@@ -418,10 +374,9 @@ final class PhabricatorHomeMainController
 
     $title = pht('Audits');
     $href = '/audit/';
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
     $panel->appendChild($view);
-    $panel->setNoBackground();
 
     return $panel;
   }
@@ -432,11 +387,13 @@ final class PhabricatorHomeMainController
 
     $phids = array($user->getPHID());
 
-    $query = new PhabricatorAuditCommitQuery();
-    $query->withAuthorPHIDs($phids);
-    $query->withStatus(PhabricatorAuditCommitQuery::STATUS_CONCERN);
-    $query->needCommitData(true);
-    $query->setLimit(10);
+    $query = id(new DiffusionCommitQuery())
+      ->setViewer($user)
+      ->withAuthorPHIDs($phids)
+      ->withAuditStatus(DiffusionCommitQuery::AUDIT_STATUS_CONCERN)
+      ->needCommitData(true)
+      ->needAuditRequests(true)
+      ->setLimit(10);
 
     $commits = $query->execute();
 
@@ -446,9 +403,9 @@ final class PhabricatorHomeMainController
         'No one has raised concerns with your commits.');
     }
 
-    $view = new PhabricatorAuditCommitListView();
-    $view->setCommits($commits);
-    $view->setUser($user);
+    $view = id(new PhabricatorAuditListView())
+      ->setCommits($commits)
+      ->setUser($user);
 
     $phids = $view->getRequiredHandlePHIDs();
     $handles = $this->loadViewerHandles($phids);
@@ -456,10 +413,9 @@ final class PhabricatorHomeMainController
 
     $title = pht('Problem Commits');
     $href = '/audit/';
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
     $panel->setHeader($this->renderSectionHeader($title, $href));
     $panel->appendChild($view);
-    $panel->setNoBackground();
 
     return $panel;
   }

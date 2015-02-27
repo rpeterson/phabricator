@@ -4,9 +4,9 @@ final class PhabricatorManiphestTaskTestDataGenerator
   extends PhabricatorTestDataGenerator {
 
   public function generate() {
-    $authorPHID = $this->loadPhabrictorUserPHID();
+    $author_phid = $this->loadPhabrictorUserPHID();
     $author = id(new PhabricatorUser())
-          ->loadOneWhere('phid = %s', $authorPHID);
+      ->loadOneWhere('phid = %s', $author_phid);
     $task = ManiphestTask::initializeNewTask($author)
       ->setSubPriority($this->generateTaskSubPriority())
       ->setTitle($this->generateTitle());
@@ -28,10 +28,8 @@ final class PhabricatorManiphestTaskTestDataGenerator
       $this->generateTaskStatus();
     $changes[ManiphestTransaction::TYPE_PRIORITY] =
       $this->generateTaskPriority();
-    $changes[ManiphestTransaction::TYPE_CCS] =
-      $this->getCCPHIDs();
-    $changes[ManiphestTransaction::TYPE_PROJECTS] =
-      $this->getProjectPHIDs();
+    $changes[PhabricatorTransactions::TYPE_SUBSCRIBERS] =
+      array('=' => $this->getCCPHIDs());
     $transactions = array();
     foreach ($changes as $type => $value) {
       $transaction = clone $template;
@@ -39,6 +37,16 @@ final class PhabricatorManiphestTaskTestDataGenerator
       $transaction->setNewValue($value);
       $transactions[] = $transaction;
     }
+
+    $transactions[] = id(new ManiphestTransaction())
+        ->setTransactionType(PhabricatorTransactions::TYPE_EDGE)
+        ->setMetadataValue(
+          'edge:type',
+          PhabricatorProjectObjectHasProjectEdgeType::EDGECONST)
+        ->setNewValue(
+          array(
+            '=' => array_fuse($this->getProjectPHIDs()),
+          ));
 
     // Apply Transactions
     $editor = id(new ManiphestTransactionEditor())
@@ -61,7 +69,7 @@ final class PhabricatorManiphestTaskTestDataGenerator
   public function getProjectPHIDs() {
     $projects = array();
     for ($i = 0; $i < rand(1, 4);$i++) {
-      $project = $this->loadOneRandom("PhabricatorProject");
+      $project = $this->loadOneRandom('PhabricatorProject');
       if ($project) {
         $projects[] = $project->getPHID();
       }

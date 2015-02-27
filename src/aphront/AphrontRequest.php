@@ -1,9 +1,9 @@
 <?php
 
 /**
- * @task data   Accessing Request Data
- * @task cookie Managing Cookies
- *
+ * @task data     Accessing Request Data
+ * @task cookie   Managing Cookies
+ * @task cluster  Working With a Phabricator Cluster
  */
 final class AphrontRequest {
 
@@ -18,16 +18,32 @@ final class AphrontRequest {
   const TYPE_WORKFLOW = '__wflow__';
   const TYPE_CONTINUE = '__continue__';
   const TYPE_PREVIEW = '__preview__';
+  const TYPE_HISEC = '__hisec__';
+  const TYPE_QUICKSAND = '__quicksand__';
 
   private $host;
   private $path;
   private $requestData;
   private $user;
   private $applicationConfiguration;
+  private $uriData;
 
   final public function __construct($host, $path) {
     $this->host = $host;
     $this->path = $path;
+  }
+
+  final public function setURIMap(array $uri_data) {
+    $this->uriData = $uri_data;
+    return $this;
+  }
+
+  final public function getURIMap() {
+    return $this->uriData;
+  }
+
+  final public function getURIData($key, $default = null) {
+    return idx($this->uriData, $key, $default);
   }
 
   final public function setApplicationConfiguration(
@@ -179,8 +195,12 @@ final class AphrontRequest {
     return $this->getExists(self::TYPE_AJAX);
   }
 
-  final public function isJavelinWorkflow() {
+  final public function isWorkflow() {
     return $this->getExists(self::TYPE_WORKFLOW);
+  }
+
+  final public function isQuicksand() {
+    return $this->getExists(self::TYPE_QUICKSAND);
   }
 
   final public function isConduit() {
@@ -230,19 +250,19 @@ final class AphrontRequest {
       if (PhabricatorEnv::getEnvConfig('phabricator.developer-mode')) {
         // TODO: Clean this up, see T1921.
         $more_info[] =
-          "To avoid this error, use phabricator_form() to construct forms. " .
-          "If you are already using phabricator_form(), make sure the form " .
-          "'action' uses a relative URI (i.e., begins with a '/'). Forms " .
-          "using absolute URIs do not include CSRF tokens, to prevent " .
-          "leaking tokens to external sites.\n\n" .
-          "If this page performs writes which do not require CSRF " .
-          "protection (usually, filling caches or logging), you can use " .
-          "AphrontWriteGuard::beginScopedUnguardedWrites() to temporarily " .
-          "bypass CSRF protection while writing. You should use this only " .
-          "for writes which can not be protected with normal CSRF " .
-          "mechanisms.\n\n" .
-          "Some UI elements (like PhabricatorActionListView) also have " .
-          "methods which will allow you to render links as forms (like " .
+          "To avoid this error, use phabricator_form() to construct forms. ".
+          "If you are already using phabricator_form(), make sure the form ".
+          "'action' uses a relative URI (i.e., begins with a '/'). Forms ".
+          "using absolute URIs do not include CSRF tokens, to prevent ".
+          "leaking tokens to external sites.\n\n".
+          "If this page performs writes which do not require CSRF ".
+          "protection (usually, filling caches or logging), you can use ".
+          "AphrontWriteGuard::beginScopedUnguardedWrites() to temporarily ".
+          "bypass CSRF protection while writing. You should use this only ".
+          "for writes which can not be protected with normal CSRF ".
+          "mechanisms.\n\n".
+          "Some UI elements (like PhabricatorActionListView) also have ".
+          "methods which will allow you to render links as forms (like ".
           "setRenderAsForm(true)).";
       }
 
@@ -263,6 +283,7 @@ final class AphrontRequest {
 
   final public function isFormPost() {
     $post = $this->getExists(self::TYPE_FORM) &&
+            !$this->getExists(self::TYPE_HISEC) &&
             $this->isHTTPPost();
 
     if (!$post) {
@@ -271,6 +292,18 @@ final class AphrontRequest {
 
     return $this->validateCSRF();
   }
+
+  final public function isFormOrHisecPost() {
+    $post = $this->getExists(self::TYPE_FORM) &&
+            $this->isHTTPPost();
+
+    if (!$post) {
+      return false;
+    }
+
+    return $this->validateCSRF();
+  }
+
 
   final public function setCookiePrefix($prefix) {
     $this->cookiePrefix = $prefix;
@@ -287,12 +320,25 @@ final class AphrontRequest {
 
   final public function getCookie($name, $default = null) {
     $name = $this->getPrefixedCookieName($name);
-    return idx($_COOKIE, $name, $default);
+    $value = idx($_COOKIE, $name, $default);
+
+    // Internally, PHP deletes cookies by setting them to the value 'deleted'
+    // with an expiration date in the past.
+
+    // At least in Safari, the browser may send this cookie anyway in some
+    // circumstances. After logging out, the 302'd GET to /login/ consistently
+    // includes deleted cookies on my local install. If a cookie value is
+    // literally 'deleted', pretend it does not exist.
+
+    if ($value === 'deleted') {
+      return null;
+    }
+
+    return $value;
   }
 
   final public function clearCookie($name) {
-    $name = $this->getPrefixedCookieName($name);
-    $this->setCookie($name, '', time() - (60 * 60 * 24 * 30));
+    $this->setCookieWithExpiration($name, '', time() - (60 * 60 * 24 * 30));
     unset($_COOKIE[$name]);
   }
 
@@ -348,7 +394,51 @@ final class AphrontRequest {
     return (bool)$this->getCookieDomainURI();
   }
 
-  final public function setCookie($name, $value, $expire = null) {
+
+  /**
+   * Set a cookie which does not expire for a long time.
+   *
+   * To set a temporary cookie, see @{method:setTemporaryCookie}.
+   *
+   * @param string  Cookie name.
+   * @param string  Cookie value.
+   * @return this
+   * @task cookie
+   */
+  final public function setCookie($name, $value) {
+    $far_future = time() + (60 * 60 * 24 * 365 * 5);
+    return $this->setCookieWithExpiration($name, $value, $far_future);
+  }
+
+
+  /**
+   * Set a cookie which expires soon.
+   *
+   * To set a durable cookie, see @{method:setCookie}.
+   *
+   * @param string  Cookie name.
+   * @param string  Cookie value.
+   * @return this
+   * @task cookie
+   */
+  final public function setTemporaryCookie($name, $value) {
+    return $this->setCookieWithExpiration($name, $value, 0);
+  }
+
+
+  /**
+   * Set a cookie with a given expiration policy.
+   *
+   * @param string  Cookie name.
+   * @param string  Cookie value.
+   * @param int     Epoch timestamp for cookie expiration.
+   * @return this
+   * @task cookie
+   */
+  final private function setCookieWithExpiration(
+    $name,
+    $value,
+    $expire) {
 
     $is_secure = false;
 
@@ -370,10 +460,6 @@ final class AphrontRequest {
 
     $base_domain = $base_domain_uri->getDomain();
     $is_secure = ($base_domain_uri->getProtocol() == 'https');
-
-    if ($expire === null) {
-      $expire = time() + (60 * 60 * 24 * 365 * 5);
-    }
 
     $name = $this->getPrefixedCookieName($name);
 
@@ -408,6 +494,10 @@ final class AphrontRequest {
     return $this->user;
   }
 
+  final public function getViewer() {
+    return $this->user;
+  }
+
   final public function getRequestURI() {
     $get = $_GET;
     unset($get['__path__']);
@@ -427,7 +517,7 @@ final class AphrontRequest {
     if (empty($_SERVER['HTTPS'])) {
       return false;
     }
-    if (!strcasecmp($_SERVER["HTTPS"], "off")) {
+    if (!strcasecmp($_SERVER['HTTPS'], 'off')) {
       return false;
     }
     return true;
@@ -539,5 +629,131 @@ final class AphrontRequest {
 
     return $default;
   }
+
+
+/* -(  Working With a Phabricator Cluster  )--------------------------------- */
+
+
+  /**
+   * Is this a proxied request originating from within the Phabricator cluster?
+   *
+   * IMPORTANT: This means the request is dangerous!
+   *
+   * These requests are **more dangerous** than normal requests (they can not
+   * be safely proxied, because proxying them may cause a loop). Cluster
+   * requests are not guaranteed to come from a trusted source, and should
+   * never be treated as safer than normal requests. They are strictly less
+   * safe.
+   */
+  public function isProxiedClusterRequest() {
+    return (bool)AphrontRequest::getHTTPHeader('X-Phabricator-Cluster');
+  }
+
+
+  /**
+   * Build a new @{class:HTTPSFuture} which proxies this request to another
+   * node in the cluster.
+   *
+   * IMPORTANT: This is very dangerous!
+   *
+   * The future forwards authentication information present in the request.
+   * Proxied requests must only be sent to trusted hosts. (We attempt to
+   * enforce this.)
+   *
+   * This is not a general-purpose proxying method; it is a specialized
+   * method with niche applications and severe security implications.
+   *
+   * @param string URI identifying the host we are proxying the request to.
+   * @return HTTPSFuture New proxy future.
+   *
+   * @phutil-external-symbol class PhabricatorStartup
+   */
+  public function newClusterProxyFuture($uri) {
+    $uri = new PhutilURI($uri);
+
+    $domain = $uri->getDomain();
+    $ip = gethostbyname($domain);
+    if (!$ip) {
+      throw new Exception(
+        pht(
+          'Unable to resolve domain "%s"!',
+          $domain));
+    }
+
+    if (!PhabricatorEnv::isClusterAddress($ip)) {
+      throw new Exception(
+        pht(
+          'Refusing to proxy a request to IP address ("%s") which is not '.
+          'in the cluster address block (this address was derived by '.
+          'resolving the domain "%s").',
+          $ip,
+          $domain));
+    }
+
+    $uri->setPath($this->getPath());
+    $uri->setQueryParams(self::flattenData($_GET));
+
+    $input = PhabricatorStartup::getRawInput();
+
+    $future = id(new HTTPSFuture($uri))
+      ->addHeader('Host', self::getHost())
+      ->addHeader('X-Phabricator-Cluster', true)
+      ->setMethod($_SERVER['REQUEST_METHOD'])
+      ->write($input);
+
+    if (isset($_SERVER['PHP_AUTH_USER'])) {
+      $future->setHTTPBasicAuthCredentials(
+        $_SERVER['PHP_AUTH_USER'],
+        new PhutilOpaqueEnvelope(idx($_SERVER, 'PHP_AUTH_PW', '')));
+    }
+
+    $headers = array();
+    $seen = array();
+
+    // NOTE: apache_request_headers() might provide a nicer way to do this,
+    // but isn't available under FCGI until PHP 5.4.0.
+    foreach ($_SERVER as $key => $value) {
+      if (preg_match('/^HTTP_/', $key)) {
+        // Unmangle the header as best we can.
+        $key = str_replace('_', ' ', $key);
+        $key = strtolower($key);
+        $key = ucwords($key);
+        $key = str_replace(' ', '-', $key);
+
+        $headers[] = array($key, $value);
+        $seen[$key] = true;
+      }
+    }
+
+    // In some situations, this may not be mapped into the HTTP_X constants.
+    // CONTENT_LENGTH is similarly affected, but we trust cURL to take care
+    // of that if it matters, since we're handing off a request body.
+    if (empty($seen['Content-Type'])) {
+      if (isset($_SERVER['CONTENT_TYPE'])) {
+        $headers[] = array('Content-Type', $_SERVER['CONTENT_TYPE']);
+      }
+    }
+
+    foreach ($headers as $header) {
+      list($key, $value) = $header;
+      switch ($key) {
+        case 'Host':
+        case 'Authorization':
+          // Don't forward these headers, we've already handled them elsewhere.
+          unset($headers[$key]);
+          break;
+        default:
+          break;
+      }
+    }
+
+    foreach ($headers as $header) {
+      list($key, $value) = $header;
+      $future->addHeader($key, $value);
+    }
+
+    return $future;
+  }
+
 
 }

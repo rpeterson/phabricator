@@ -24,7 +24,7 @@ final class PhabricatorObjectQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     if ($this->namedResults === null) {
       $this->namedResults = array();
     }
@@ -78,7 +78,7 @@ final class PhabricatorObjectQuery
 
   public function getNamedResults() {
     if ($this->namedResults === null) {
-      throw new Exception("Call execute() before getNamedResults()!");
+      throw new Exception('Call execute() before getNamedResults()!');
     }
     return $this->namedResults;
   }
@@ -144,12 +144,18 @@ final class PhabricatorObjectQuery
   }
 
   /**
-   * This query disables policy filtering because it is performed in the
-   * subqueries which actually load objects. We don't need to re-filter
-   * results, since policies have already been applied.
+   * This query disables policy filtering if the only required capability is
+   * the view capability.
+   *
+   * The view capability is always checked in the subqueries, so we do not need
+   * to re-filter results. For any other set of required capabilities, we do.
    */
   protected function shouldDisablePolicyFiltering() {
-    return true;
+    $view_capability = PhabricatorPolicyCapability::CAN_VIEW;
+    if ($this->getRequiredCapabilities() === array($view_capability)) {
+      return true;
+    }
+    return false;
   }
 
   public function getQueryApplicationClass() {

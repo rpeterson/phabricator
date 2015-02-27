@@ -7,9 +7,6 @@
  * @javelin
  */
 
-/**
- * @group control
- */
 JX.install('TypeaheadSource', {
   construct : function() {
     this._raw = {};
@@ -28,7 +25,7 @@ JX.install('TypeaheadSource', {
      * the server. The purpose of normalization is to strip out irrelevant data,
      * like uppercase/lowercase, extra spaces, or punctuation. By default,
      * the @{JX.TypeaheadNormalizer} is used to normalize strings, but you may
-     * want to provide a different normalizer, particiularly if there are
+     * want to provide a different normalizer, particularly if there are
      * special characters with semantic meaning in your object names.
      *
      * @param function
@@ -60,7 +57,7 @@ JX.install('TypeaheadSource', {
      *    - **display**: the text or nodes to show in the DOM. Usually just the
      *      same as ##name##.
      *    - **tokenizable**: if you want to tokenize something other than the
-     *      ##name##, for the typeahead to complete on, specify it here.  A
+     *      ##name##, for the typeahead to complete on, specify it here. A
      *      selected entry from the typeahead will still insert the ##name##
      *      into the input, but the ##tokenizable## field lets you complete on
      *      non-name things.
@@ -150,7 +147,7 @@ JX.install('TypeaheadSource', {
       this._startListener.remove();
     },
 
-    didChange : function(value) {
+    didChange : function() {
       return;
     },
 
@@ -190,8 +187,8 @@ JX.install('TypeaheadSource', {
         for (var k in {name : 1, id : 1, display : 1, uri : 1}) {
           if (!(k in obj)) {
             throw new Error(
-              "JX.TypeaheadSource.addResult(): " +
-              "result must have properties 'name', 'id', 'uri' and 'display'.");
+              'JX.TypeaheadSource.addResult(): result must have ' +
+              'properties \'name\', \'id\', \'uri\' and \'display\'.');
           }
         }
       }

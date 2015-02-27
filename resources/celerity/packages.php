@@ -1,7 +1,7 @@
 <?php
 
 return array(
-  'javelin.pkg.js' => array(
+  'core.pkg.js' => array(
     'javelin-util',
     'javelin-install',
     'javelin-event',
@@ -22,8 +22,8 @@ return array(
     'javelin-typeahead-ondemand-source',
     'javelin-tokenizer',
     'javelin-history',
-  ),
-  'core.pkg.js' => array(
+    'javelin-router',
+    'javelin-routable',
     'javelin-behavior-aphront-basic-tokenizer',
     'javelin-behavior-workflow',
     'javelin-behavior-aphront-form-disable-on-submit',
@@ -33,8 +33,9 @@ return array(
     'javelin-behavior-refresh-csrf',
     'javelin-behavior-phabricator-watch-anchor',
     'javelin-behavior-phabricator-autofocus',
-    'phabricator-menu-item',
-    'phabricator-dropdown-menu',
+    'phuix-dropdown-menu',
+    'phuix-action-list-view',
+    'phuix-action-view',
     'phabricator-phtize',
     'javelin-behavior-phabricator-oncopy',
     'phabricator-tooltip',
@@ -52,7 +53,6 @@ return array(
     'javelin-behavior-aphlict-dropdown',
     'javelin-behavior-history-install',
     'javelin-behavior-phabricator-gesture',
-
     'javelin-behavior-phabricator-active-nav',
     'javelin-behavior-phabricator-nav',
     'javelin-behavior-phabricator-remarkup-assist',
@@ -64,6 +64,16 @@ return array(
     'javelin-behavior-phabricator-hovercards',
     'javelin-color',
     'javelin-fx',
+    'phabricator-draggable-list',
+    'javelin-behavior-phabricator-transaction-list',
+    'javelin-behavior-phabricator-show-older-transactions',
+    'javelin-behavior-phui-timeline-dropdown-menu',
+    'javelin-behavior-doorkeeper-tag',
+    'phabricator-title',
+    'javelin-leader',
+    'javelin-websocket',
+    'javelin-behavior-dashboard-async-panel',
+    'javelin-behavior-dashboard-tab-panel',
   ),
   'core.pkg.css' => array(
     'phabricator-core-css',
@@ -78,21 +88,16 @@ return array(
     'aphront-typeahead-control-css',
     'aphront-list-filter-view-css',
 
-    'phabricator-jump-nav',
-
     'phabricator-remarkup-css',
     'syntax-highlighting-css',
     'aphront-pager-view-css',
     'phabricator-transaction-view-css',
     'aphront-tooltip-css',
     'phabricator-flag-css',
-    'aphront-error-view-css',
+    'phui-error-view-css',
 
-    'sprite-icons-css',
     'sprite-gradient-css',
     'sprite-menu-css',
-    'sprite-apps-large-css',
-    'sprite-status-css',
 
     'phabricator-main-menu-view',
     'phabricator-notification-css',
@@ -102,7 +107,7 @@ return array(
     'phabricator-filetree-view-css',
     'phabricator-nav-view-css',
     'phabricator-side-menu-view-css',
-    'phabricator-crumbs-view-css',
+    'phui-crumbs-view-css',
     'phui-object-item-list-view-css',
     'global-drag-and-drop-css',
     'phui-spacing-css',
@@ -114,6 +119,22 @@ return array(
     'phui-property-list-view-css',
     'phui-tag-view-css',
     'phui-list-view-css',
+
+    'font-fontawesome',
+    'phui-font-icon-base-css',
+    'sprite-main-header-css',
+    'phui-box-css',
+    'phui-object-box-css',
+    'phui-timeline-view-css',
+    'sprite-tokens-css',
+    'tokens-css',
+    'phui-status-list-view-css',
+
+    'phui-feed-story-css',
+    'phabricator-feed-css',
+    'phabricator-dashboard-css',
+    'aphront-multi-column-view-css',
+    'phui-action-header-view-css',
   ),
   'differential.pkg.css' => array(
     'differential-core-view-css',
@@ -126,7 +147,6 @@ return array(
     'differential-revision-add-comment-css',
     'phabricator-object-selector-css',
     'phabricator-content-source-view-css',
-    'differential-local-commits-view-css',
     'inline-comment-summary-css',
   ),
   'differential.pkg.js' => array(
@@ -150,9 +170,9 @@ return array(
     'javelin-behavior-differential-dropdown-menus',
     'javelin-behavior-differential-toggle-files',
     'javelin-behavior-differential-user-select',
+    'javelin-behavior-aphront-more',
   ),
   'diffusion.pkg.css' => array(
-    'diffusion-commit-view-css',
     'diffusion-icons-css',
   ),
   'diffusion.pkg.js' => array(
@@ -162,7 +182,6 @@ return array(
   ),
   'maniphest.pkg.css' => array(
     'maniphest-task-summary-css',
-    'phabricator-project-tag-css',
   ),
   'maniphest.pkg.js' => array(
     'javelin-behavior-maniphest-batch-selector',
@@ -170,6 +189,7 @@ return array(
     'javelin-behavior-maniphest-transaction-preview',
     'javelin-behavior-maniphest-transaction-expand',
     'javelin-behavior-maniphest-subpriority-editor',
+    'javelin-behavior-maniphest-list-editor',
   ),
   'darkconsole.pkg.js' => array(
     'javelin-behavior-dark-console',

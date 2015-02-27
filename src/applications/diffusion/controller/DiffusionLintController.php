@@ -6,13 +6,12 @@ final class DiffusionLintController extends DiffusionController {
     return true;
   }
 
-  public function processRequest() {
-    $request = $this->getRequest();
-    $user = $this->getRequest()->getUser();
+  protected function processDiffusionRequest(AphrontRequest $request) {
+    $user = $request->getUser();
     $drequest = $this->diffusionRequest;
 
     if ($request->getStr('lint') !== null) {
-      $controller = new DiffusionLintDetailsController($request);
+      $controller = new DiffusionLintDetailsController();
       $controller->setDiffusionRequest($drequest);
       $controller->setCurrentApplication($this->getCurrentApplication());
       return $this->delegateToController($controller);
@@ -112,7 +111,7 @@ final class DiffusionLintController extends DiffusionController {
         ->setMethod('GET')
         ->appendChild(
           id(new AphrontFormTokenizerControl())
-            ->setDatasource('/typeahead/common/users/')
+            ->setDatasource(new PhabricatorPeopleDatasource())
             ->setLimit(1)
             ->setName('owner')
             ->setLabel(pht('Owner'))
@@ -279,7 +278,7 @@ final class DiffusionLintController extends DiffusionController {
       id(new PhabricatorActionView())
         ->setName(pht('View As List'))
         ->setHref($list_uri)
-        ->setIcon('transcript'));
+        ->setIcon('fa-list'));
 
     $history_uri = $drequest->generateURI(
       array(
@@ -290,7 +289,7 @@ final class DiffusionLintController extends DiffusionController {
       id(new PhabricatorActionView())
         ->setName(pht('View History'))
         ->setHref($history_uri)
-        ->setIcon('history'));
+        ->setIcon('fa-clock-o'));
 
     $browse_uri = $drequest->generateURI(
       array(
@@ -301,7 +300,7 @@ final class DiffusionLintController extends DiffusionController {
       id(new PhabricatorActionView())
         ->setName(pht('Browse Content'))
         ->setHref($browse_uri)
-        ->setIcon('file'));
+        ->setIcon('fa-files-o'));
 
     return $view;
   }

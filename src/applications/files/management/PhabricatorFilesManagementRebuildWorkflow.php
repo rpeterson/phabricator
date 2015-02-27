@@ -3,7 +3,7 @@
 final class PhabricatorFilesManagementRebuildWorkflow
   extends PhabricatorFilesManagementWorkflow {
 
-  public function didConstruct() {
+  protected function didConstruct() {
     $this
       ->setName('rebuild')
       ->setSynopsis('Rebuild metadata of old files.')
@@ -38,8 +38,8 @@ final class PhabricatorFilesManagementRebuildWorkflow
     $iterator = $this->buildIterator($args);
     if (!$iterator) {
       throw new PhutilArgumentUsageException(
-        "Either specify a list of files to update, or use `--all` ".
-        "to update all files.");
+        'Either specify a list of files to update, or use `--all` '.
+        'to update all files.');
     }
 
     $update = array(
@@ -116,7 +116,7 @@ final class PhabricatorFilesManagementRebuildWorkflow
         }
 
         $console->writeOut(
-          "%s: Updating metadata... ",
+          '%s: Updating metadata... ',
           $fid);
 
         try {

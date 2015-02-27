@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group maniphest
- */
 final class ManiphestSubpriorityController extends ManiphestController {
 
   public function processRequest() {
@@ -16,6 +13,7 @@ final class ManiphestSubpriorityController extends ManiphestController {
     $task = id(new ManiphestTaskQuery())
       ->setViewer($user)
       ->withIDs(array($request->getInt('task')))
+      ->needProjectPHIDs(true)
       ->requireCapabilities(
         array(
           PhabricatorPolicyCapability::CAN_VIEW,
@@ -45,7 +43,10 @@ final class ManiphestSubpriorityController extends ManiphestController {
       ->setTransactionType(ManiphestTransaction::TYPE_SUBPRIORITY)
       ->setNewValue(array(
         'newPriority' => $after_pri,
-        'newSubpriorityBase' => $after_sub)));
+        'newSubpriorityBase' => $after_sub,
+        'direction' => '>',
+      )),
+    );
     $editor = id(new ManiphestTransactionEditor())
       ->setActor($user)
       ->setContinueOnMissingFields(true)

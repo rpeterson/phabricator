@@ -12,7 +12,7 @@ final class PhabricatorMacroTransaction
   }
 
   public function getApplicationTransactionType() {
-    return PhabricatorMacroPHIDTypeMacro::TYPECONST;
+    return PhabricatorMacroMacroPHIDType::TYPECONST;
   }
 
   public function getApplicationTransactionCommentObject() {
@@ -124,7 +124,7 @@ final class PhabricatorMacroTransaction
     return parent::getTitle();
   }
 
-  public function getTitleForFeed(PhabricatorFeedStory $story) {
+  public function getTitleForFeed() {
     $author_phid = $this->getAuthorPHID();
     $object_phid = $this->getObjectPHID();
 
@@ -201,7 +201,7 @@ final class PhabricatorMacroTransaction
 
     }
 
-    return parent::getTitleForFeed($story);
+    return parent::getTitleForFeed();
   }
 
   public function getActionName() {
@@ -255,21 +255,21 @@ final class PhabricatorMacroTransaction
 
     switch ($this->getTransactionType()) {
       case PhabricatorMacroTransactionType::TYPE_NAME:
-        return 'edit';
+        return 'fa-pencil';
       case PhabricatorMacroTransactionType::TYPE_FILE:
         if ($old === null) {
-          return 'create';
+          return 'fa-plus';
         } else {
-          return 'edit';
+          return 'fa-pencil';
         }
       case PhabricatorMacroTransactionType::TYPE_DISABLED:
         if ($new) {
-          return 'delete';
+          return 'fa-times';
         } else {
-          return 'undo';
+          return 'fa-undo';
         }
       case PhabricatorMacroTransactionType::TYPE_AUDIO:
-        return 'herald';
+        return 'fa-headphones';
     }
 
     return parent::getIcon();
@@ -290,7 +290,7 @@ final class PhabricatorMacroTransaction
         }
       case PhabricatorMacroTransactionType::TYPE_DISABLED:
         if ($new) {
-          return PhabricatorTransactions::COLOR_BLACK;
+          return PhabricatorTransactions::COLOR_RED;
         } else {
           return PhabricatorTransactions::COLOR_SKY;
         }

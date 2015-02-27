@@ -14,7 +14,7 @@ final class DifferentialJIRAIssuesField
   }
 
   public function isFieldEnabled() {
-    return (bool)PhabricatorAuthProviderOAuth1JIRA::getJIRAProvider();
+    return (bool)PhabricatorJIRAAuthProvider::getJIRAProvider();
   }
 
   public function canDisableField() {
@@ -26,7 +26,11 @@ final class DifferentialJIRAIssuesField
   }
 
   public function setValueFromStorage($value) {
-    $this->setValue(phutil_json_decode($value));
+    try {
+      $this->setValue(phutil_json_decode($value));
+    } catch (PhutilJSONParserException $ex) {
+      $this->setValue(array());
+    }
     return $this;
   }
 
@@ -62,7 +66,7 @@ final class DifferentialJIRAIssuesField
   }
 
   private function buildDoorkeeperRefs($value) {
-    $provider = PhabricatorAuthProviderOAuth1JIRA::getJIRAProvider();
+    $provider = PhabricatorJIRAAuthProvider::getJIRAProvider();
 
     $refs = array();
     if ($value) {
@@ -93,11 +97,11 @@ final class DifferentialJIRAIssuesField
   }
 
   public function shouldAppearInEditView() {
-    return PhabricatorAuthProviderOAuth1JIRA::getJIRAProvider();
+    return PhabricatorJIRAAuthProvider::getJIRAProvider();
   }
 
   public function shouldAppearInApplicationTransactions() {
-    return PhabricatorAuthProviderOAuth1JIRA::getJIRAProvider();
+    return PhabricatorJIRAAuthProvider::getJIRAProvider();
   }
 
   public function readValueFromRequest(AphrontRequest $request) {
@@ -116,11 +120,11 @@ final class DifferentialJIRAIssuesField
   }
 
   public function getOldValueForApplicationTransactions() {
-    return nonempty($this->getValue(), array());
+    return array_unique(nonempty($this->getValue(), array()));
   }
 
   public function getNewValueForApplicationTransactions() {
-    return nonempty($this->getValue(), array());
+    return array_unique(nonempty($this->getValue(), array()));
   }
 
   public function validateApplicationTransactions(
@@ -137,12 +141,36 @@ final class DifferentialJIRAIssuesField
 
     $transaction = null;
     foreach ($xactions as $xaction) {
-      $value = $xaction->getNewValue();
+      $old = $xaction->getOldValue();
+      $new = $xaction->getNewValue();
 
-      $refs = id(new DoorkeeperImportEngine())
-        ->setViewer($this->getViewer())
-        ->setRefs($this->buildDoorkeeperRefs($value))
-        ->execute();
+      $add = array_diff($new, $old);
+      if (!$add) {
+        continue;
+      }
+
+      // Only check that the actor can see newly added JIRA refs. You're
+      // allowed to remove refs or make no-op changes even if you aren't
+      // linked to JIRA.
+
+      try {
+        $refs = id(new DoorkeeperImportEngine())
+          ->setViewer($this->getViewer())
+          ->setRefs($this->buildDoorkeeperRefs($add))
+          ->setThrowOnMissingLink(true)
+          ->execute();
+      } catch (DoorkeeperMissingLinkException $ex) {
+        $this->error = pht('Not Linked');
+        $errors[] = new PhabricatorApplicationTransactionValidationError(
+          $type,
+          pht('Not Linked'),
+          pht(
+            'You can not add JIRA issues (%s) to this revision because your '.
+            'Phabricator account is not linked to a JIRA account.',
+            implode(', ', $add)),
+          $xaction);
+        continue;
+      }
 
       $bad = array();
       foreach ($refs as $ref) {
@@ -155,15 +183,14 @@ final class DifferentialJIRAIssuesField
         $bad = implode(', ', $bad);
         $this->error = pht('Invalid');
 
-        $error = new PhabricatorApplicationTransactionValidationError(
+        $errors[] = new PhabricatorApplicationTransactionValidationError(
           $type,
           pht('Invalid'),
           pht(
-            "Some JIRA issues could not be loaded. They may not exist, or ".
-            "you may not have permission to view them: %s",
+            'Some JIRA issues could not be loaded. They may not exist, or '.
+            'you may not have permission to view them: %s',
             $bad),
           $xaction);
-        $errors[] = $error;
       }
     }
 
@@ -222,7 +249,7 @@ final class DifferentialJIRAIssuesField
     $revision = $this->getObject();
     $revision_phid = $revision->getPHID();
 
-    $edge_type = PhabricatorEdgeConfig::TYPE_PHOB_HAS_JIRAISSUE;
+    $edge_type = PhabricatorJiraIssueHasObjectEdgeType::EDGECONST;
     $xobjs = $this->loadDoorkeeperExternalObjects($xaction->getNewValue());
     $edge_dsts = mpull($xobjs, 'getPHID');
 
@@ -230,8 +257,7 @@ final class DifferentialJIRAIssuesField
       $revision_phid,
       $edge_type);
 
-    $editor = id(new PhabricatorEdgeEditor())
-      ->setActor($this->getViewer());
+    $editor = new PhabricatorEdgeEditor();
 
     foreach (array_diff($edges, $edge_dsts) as $rem_edge) {
       $editor->removeEdge($revision_phid, $edge_type, $rem_edge);
@@ -264,6 +290,13 @@ final class DifferentialJIRAIssuesField
     return preg_split('/[\s,]+/', $value, $limit = -1, PREG_SPLIT_NO_EMPTY);
   }
 
+  public function readValueFromCommitMessage($value) {
+    $this->setValue($value);
+    return $this;
+  }
+
+
+
   public function renderCommitMessageValue(array $handles) {
     $value = $this->getValue();
     if (!$value) {
@@ -275,5 +308,6 @@ final class DifferentialJIRAIssuesField
   public function shouldAppearInConduitDictionary() {
     return true;
   }
+
 
 }

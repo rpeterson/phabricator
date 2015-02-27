@@ -28,7 +28,7 @@ final class PhragmentSnapshotQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhragmentSnapshot();
     $conn_r = $table->establishConnection('r');
 
@@ -105,6 +105,7 @@ final class PhragmentSnapshotQuery
   }
 
   public function getQueryApplicationClass() {
-    return 'PhabricatorApplicationPhragment';
+    return 'PhabricatorPhragmentApplication';
   }
+
 }

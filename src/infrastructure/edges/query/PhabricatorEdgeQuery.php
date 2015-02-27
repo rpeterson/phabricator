@@ -160,7 +160,7 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
   public function execute() {
     if (!$this->sourcePHIDs) {
       throw new Exception(
-      "You must use withSourcePHIDs() to query edges.");
+      'You must use withSourcePHIDs() to query edges.');
     }
 
     $sources = phid_group_by_type($this->sourcePHIDs);
@@ -257,23 +257,24 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
     array $types = array()) {
     if ($this->resultSet === null) {
       throw new Exception(
-        "You must execute() a query before you you can getDestinationPHIDs().");
+        'You must execute() a query before you you can getDestinationPHIDs().');
     }
 
-    $src_phids = array_fill_keys($src_phids, true);
-    $types = array_fill_keys($types, true);
-
     $result_phids = array();
-    foreach ($this->resultSet as $src => $edges_by_type) {
-      if ($src_phids && empty($src_phids[$src])) {
-        continue;
+
+    $set = $this->resultSet;
+    if ($src_phids) {
+      $set = array_select_keys($set, $src_phids);
+    }
+
+    foreach ($set as $src => $edges_by_type) {
+      if ($types) {
+        $edges_by_type = array_select_keys($edges_by_type, $types);
       }
-      foreach ($edges_by_type as $type => $edges_by_dst) {
-        if ($types && empty($types[$type])) {
-          continue;
-        }
-        foreach ($edges_by_dst as $dst => $edge) {
-          $result_phids[$dst] = true;
+
+      foreach ($edges_by_type as $edges) {
+        foreach ($edges as $edge_phid => $edge) {
+          $result_phids[$edge_phid] = true;
         }
       }
     }
